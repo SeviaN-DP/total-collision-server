@@ -1,6 +1,6 @@
 {
   "name": "total-collision-server",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "description": "Сервер лобби и связи для Total Collision",
   "main": "server.js",

@@ -5,9 +5,15 @@
 'use strict';
 const http=require('http');
 const {WebSocketServer}=require('ws');
+const crypto=require('crypto');
 const Acc=require('./accounts.js');
+const sha=x=>crypto.createHash('sha256').update(x).digest('hex');
+const pwTries=new Map(); // ip|код -> времена неверных попыток
+function pwLimited(key,add){ const now=Date.now(); let a=(pwTries.get(key)||[]).filter(t=>now-t<60000); if(add)a.push(now); pwTries.set(key,a); return a.length>=6; }
+setInterval(()=>{ const now=Date.now(); for(const [k,a] of pwTries){ if(!a.length||now-a[a.length-1]>120000)pwTries.delete(k); } },120000);
 const PORT=process.env.PORT||8080;
 const MAX_GUESTS=5;
+function ipOf(req){ const f=req&&req.headers&&req.headers['x-forwarded-for']; return (f?String(f).split(',')[0].trim():(req&&req.socket&&req.socket.remoteAddress))||'?'; }
 const ALPH='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const rooms=new Map(); // code -> {host, guests:Map(id->ws), seq, token, grace}
 const GRACE_MS=60000; // сколько ждём хоста, который обновил страницу
@@ -41,15 +47,21 @@ wss.on('connection',(ws,req)=>{
           return;
         }
         const c=code(); if(!c){sendT(ws,{t:'err',e:'full'});return ws.close();}
-        ws.role='host'; ws.room={code:c,host:ws,guests:new Map(),seq:0,token:tok,grace:null}; rooms.set(c,ws.room); sendT(ws,{t:'hosted',code:c});
+        ws.role='host'; ws.room={code:c,host:ws,guests:new Map(),seq:0,token:tok,grace:null,pwh:m.pw?sha(c+String(m.pw).slice(0,32)):''}; rooms.set(c,ws.room); sendT(ws,{t:'hosted',code:c});
       }else if(m.t==='join'){
         const r=rooms.get(String(m.code||'').trim().toUpperCase());
         if(!r){sendT(ws,{t:'nojoin',e:'nf'});return ws.close();}
         if(r.guests.size>=MAX_GUESTS){sendT(ws,{t:'nojoin',e:'full'});return ws.close();}
+        if(r.pwh){
+          const key=ipOf(req)+'|'+r.code;
+          if(pwLimited(key,false)){sendT(ws,{t:'nojoin',e:'rate'});return ws.close();}
+          if(m.pw==null||m.pw===''){sendT(ws,{t:'nojoin',e:'pw'});return ws.close();}
+          if(sha(r.code+String(m.pw).slice(0,32))!==r.pwh){ pwLimited(key,true); sendT(ws,{t:'nojoin',e:'badpw'});return ws.close(); }
+        }
         ws.role='guest'; ws.room=r; ws.gid=++r.seq; r.guests.set(ws.gid,ws); sendT(ws,{t:'joined'});
         if(r.host)sendT(r.host,{join:ws.gid});
       }else if(m.t==='list'){
-        const list=[]; for(const r of rooms.values()){ const i=r.info; if(i&&i.open&&!i.inGame&&r.host&&r.host.readyState===1)list.push({code:r.code,name:String(i.name||'').slice(0,24),mode:String(i.mode||'').slice(0,8),n:i.n|0,max:i.max|0,size:i.size|0,ver:String(i.ver||'').slice(0,12)}); }
+        const list=[]; for(const r of rooms.values()){ const i=r.info; if(i&&!i.inGame&&r.host&&r.host.readyState===1)list.push({code:r.code,lock:!!r.pwh,name:String(i.name||'').slice(0,24),mode:String(i.mode||'').slice(0,8),n:i.n|0,max:i.max|0,size:i.size|0,ver:String(i.ver||'').slice(0,12)}); }
         sendT(ws,{t:'rooms',list:list.slice(0,50)}); setTimeout(()=>{try{ws.close();}catch(e){}},300);
       }else if(Acc.handshake(ws,m,req)){ ws.role='acct'; }
       else ws.close();
@@ -69,7 +81,7 @@ wss.on('connection',(ws,req)=>{
       }else{
         let m; try{m=JSON.parse(data.toString());}catch(e){return;}
         if(m.t==='ping')return;
-        if(m.t==='info'){ r.info={open:!!m.open,inGame:!!m.inGame,name:m.name,mode:m.mode,n:m.n,max:m.max,size:m.size,ver:m.ver}; return; }
+        if(m.t==='info'){ if(typeof m.pw==='string')r.pwh=m.pw?sha(r.code+m.pw.slice(0,32)):''; r.info={open:!!m.open,inGame:!!m.inGame,name:m.name,mode:m.mode,n:m.n,max:m.max,size:m.size,ver:m.ver}; return; }
         const s=JSON.stringify(m.m);
         if(m.to===0||m.to==null){ for(const g of r.guests.values())if(g.readyState===1)g.send(s); }
         else if(m.kick){ const g=r.guests.get(m.kick); if(g)g.close(); }
