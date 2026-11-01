@@ -17,7 +17,7 @@ function blobR(q,a){const s=q.sh; if(!s)return q.r; return q.r*(1+s[0]*Math.sin(
 function inBlob(q,x,y){const dx=x-q.x,dy=y-q.y,d2=dx*dx+dy*dy,rr=q.r*1.45; if(d2>rr*rr)return false; const R=blobR(q,Math.atan2(dy,dx)); return d2<R*R;}
 function genMap(S,g,seed){
   const r=rng(seed*7919+13), T=g.terrain;
-  const m={size:S,seed,rects:[],rocks:[],ridges:0,swamps:[],grass:[],bridges:[],rivers:[],fords:[]};
+  const m={size:S,seed,roads:[],rects:[],rocks:[],ridges:0,swamps:[],grass:[],bridges:[],rivers:[],fords:[]};
   const R=Math.max(g.pointRadiusMin,S*g.pointRadiusK);
   m.point={x:S/2,y:S/2,r:R};
   const zoneH=S*g.zonePct/100; m.zoneH=zoneH;
@@ -28,20 +28,26 @@ function genMap(S,g,seed){
   const mirSh=s=>[s[0],s[1]+2*PI,s[2],s[3]+3*PI,s[4],s[5]+5*PI];
   function inNeutral(y,rad){return y-rad>=zoneH+2&&y+rad<=S-zoneH-2}
   function farFromPoint(x,y,rad){return Math.hypot(x-S/2,y-S/2)>R*2.5+rad}
-  // реки: извилистые, две центрально-симметричные полосы между зонами и точкой
-  const riverY=[S/2+(r()<0.5?-1:1)*(0.11+0.04*r())*S], rhw=Math.max(3,0.006*S);
+  // реки: извилистые, наклонные, две центрально-симметричные (по одной в каждой половине)
+  const rhw=Math.max(3,0.006*S);
   const useRivers=T.rivers&&S>=750;
   const riverF=[]; let bhMax=0;
   if(useRivers){
-    const A1=(0.010+0.006*r())*S, A2=(0.004+0.004*r())*S, w1=TAU/(S*(0.55+0.3*r())), w2=TAU/(S*(0.2+0.12*r())), p1=r()*TAU, p2=r()*TAU;
-    const f0=x=>riverY[0]+A1*Math.sin(x*w1+p1)+A2*Math.sin(x*w2+p2);
-    riverF.push(f0);
     const bh=Math.max(4,5*Math.max(1,k)); bhMax=bh;
+    const lo=zoneH+rhw+bh+8, hi=S/2-R*1.6-rhw-bh-8, avail=Math.max(10,hi-lo);
+    const tilt=(r()-0.5)*2*0.3*S*(r()<0.35?0.15:1), A1=(0.012+0.02*r())*S, A2=(0.004+0.006*r())*S;
+    const w1=TAU/(S*(0.5+0.35*r())), w2=TAU/(S*(0.18+0.12*r())), p1=r()*TAU, p2=r()*TAU;
+    const raw=x=>tilt*(x/S-0.5)+A1*Math.sin(x*w1+p1)+A2*Math.sin(x*w2+p2);
+    let gmin=1e9,gmax=-1e9; for(let x=0;x<=S;x+=5){const v=raw(x);if(v<gmin)gmin=v;if(v>gmax)gmax=v;}
+    const span=Math.max(1e-6,gmax-gmin), sc=Math.min(1,avail/span), off=r()*(avail-span*sc);
+    const f0=x=>lo+off+(raw(x)-gmin)*sc;
+    const fB=x=>S-f0(S-x);
+    riverF.push(f0,fB);
     const nb=S>=1500?4:3;
     const bx=[];for(let i=0;i<nb;i++)bx.push(S*(0.12+0.76*(i+0.15+r()*0.7)/nb));
     riverF.forEach((f,ri)=>{
-      const rv={y:riverY[ri],hw:rhw,f,ri}; m.rivers.push(rv);
-      const xs=bx.slice().sort((a,b)=>a-b);
+      const rv={y:f(S/2),hw:rhw,f,ri}; m.rivers.push(rv);
+      const xs=(ri===0?bx:bx.map(x=>S-x)).slice().sort((a,b)=>a-b);
       if(T.bridges){
         xs.forEach(x=>{const y=f(x);m.bridges.push({x,y,hw:bh,rhw,ri,ang:Math.atan2(f(x+2)-f(x-2),4)});});
         const st=Math.max(5,rhw*1.2);
@@ -62,11 +68,11 @@ function genMap(S,g,seed){
   if(T.swamps)tryPlace(1,()=>{const rad=(34+r()*22)*Math.max(0.8,k);const x=rad+10+r()*(S-2*rad-20),y=zoneH+rad+6+r()*Math.max(1,(S-2*zoneH-2*rad-12));
     if(!inNeutral(y,rad)||Math.hypot(x-S/2,y-S/2)<R*3+rad||(useRivers&&riverF.some(f=>{for(let xx=Math.max(0,x-rad*1.5);xx<=Math.min(S,x+rad*1.5);xx+=6)if(Math.abs(y-f(xx))<rhw+rad*1.45+bhMax+10)return true;return false;})))return false;
     m.swamps.push({x,y,r:rad,sh:shp(.3,.16,.1)});area+=PI*rad*rad;return true});
-  if(T.rocks)tryPlace(cnt(2.2),()=>{
+  if(T.rocks)tryPlace(cnt(2.2*(T.rockN||1)),()=>{
     // хребет: цепочка валунов вдоль плавной дуги, симметричный двойник напротив
-    const len=(34+r()*50)*Math.max(0.8,k), n=Math.max(5,Math.round(len/5.5)), a0=r()*PI, bend=(r()-.5)*1.1;
+    const len=(34+r()*50)*Math.max(0.8,k)*(T.rockLen||1), n=Math.max(5,Math.round(len/5.5)), a0=r()*PI, bend=(r()-.5)*1.1;
     const x=r()*S, y=zoneH+len*0.5+8+r()*Math.max(1,(S/2-zoneH-len-12)); const chain=[]; let cx=x-Math.cos(a0)*len/2, cy=y-Math.sin(a0)*len/2, ang=a0-bend/2;
-    for(let i=0;i<n;i++){ const t=i/(n-1), env=0.45+0.55*Math.sin(Math.PI*(0.12+0.76*t)); const rad=(2.3+r()*2.6)*env*Math.max(0.9,Math.sqrt(k))+1.2;
+    for(let i=0;i<n;i++){ const t=i/(n-1), env=0.45+0.55*Math.sin(Math.PI*(0.12+0.76*t)); const rad=(2.3+r()*2.6)*env*Math.max(0.9,Math.sqrt(k))*(T.rockR||1)+1.2;
       chain.push({x:cx+(r()-.5)*2,y:cy+(r()-.5)*2,r:rad,sh:shp(.22,.16,.1)}); ang+=bend/n+(r()-.5)*0.15; const st=rad*1.25+1.2; cx+=Math.cos(ang)*st; cy+=Math.sin(ang)*st; }
     for(const q of chain){ if(!inNeutral(q.y,q.r+2)||!farFromPoint(q.x,q.y,q.r+2)||nearRiver(q.x,q.y,q.r+2)||q.x<q.r+4||q.x>S-q.r-4)return false; }
     const id=m.ridges++; for(const q of chain){ q.rid=id; m.rocks.push(q); area+=PI*q.r*q.r*1.4; }
@@ -77,6 +83,43 @@ function genMap(S,g,seed){
     m.rects.push(mkRect(x,y,len/2,0.8,ang),mkRect(S-x,S-y,len/2,0.8,ang));area+=2*len*1.6;return true});
   if(T.grass)tryPlace(cnt(5),()=>{const rad=(12+r()*20)*Math.max(0.7,k);const x=r()*S,y=r()*S/2;if(Math.hypot(x-S/2,y-S/2)<R+rad)return false;
     {const sh=shp(.26,.16,.1);m.grass.push({x,y,r:rad,sh},{x:S-x,y:S-y,r:rad,sh:mirSh(sh)});}return true});
+  if(T.city){
+    m.city=true; m.plaza={x:S/2,y:S/2,hw:Math.max(avHW0(),R*2.2)};
+    // город: два широких проспекта через центр (там точка и площадь), вторичные улицы, кварталы из зданий разного размера
+    const ck=T.cityK||1, fill=T.cityFill==null?0.85:T.cityFill;
+    function avHW0(){return Math.max(13,0.016*S);}
+    const avHW=Math.max(13,0.016*S), stHW=Math.max(6.5,0.0075*S), alley=Math.max(4.5,0.005*S);
+    const cw=S*(0.13+0.03*r())*ck, rh=S*(0.12+0.03*r())*ck;
+    const ax=[{p:S/2,hw:avHW}], ay=[{p:S/2,hw:avHW}];
+    for(let j=1;S/2+j*cw<S+cw;j++){ax.push({p:S/2+j*cw,hw:stHW},{p:S/2-j*cw,hw:stHW});}
+    for(let i=1;S/2+i*rh<S+rh;i++){ay.push({p:S/2+i*rh,hw:stHW},{p:S/2-i*rh,hw:stHW});}
+    ax.sort((u,v)=>u.p-v.p); ay.sort((u,v)=>u.p-v.p);
+    for(const q of ax)if(q.p>=0&&q.p<=S)m.roads.push({x:q.p,y:S/2,hw:q.hw,hh:S/2});
+    for(const q of ay)if(q.p>=0&&q.p<=S)m.roads.push({x:S/2,y:q.p,hw:S/2,hh:q.hw});
+    const add=(x0,y0,x1,y1)=>{ const hw=(x1-x0)/2, hh=(y1-y0)/2, cx=(x0+x1)/2, cy=(y0+y1)/2, tone=(r()*3)|0;
+      m.rects.push(Object.assign(mkRect(cx,cy,hw,hh,0),{house:true,tone}),Object.assign(mkRect(S-cx,S-cy,hw,hh,0),{house:true,tone})); area+=8*hw*hh; };
+    const split=(x0,y0,x1,y1,d)=>{
+      const w=x1-x0,h=y1-y0; if(w<8||h<8)return;
+      const small=w<28&&h<28;
+      const big=w>46||h>46;
+      if(!big&&(small||d>=3||r()<0.12+0.1*d)){ if(r()>fill)return;
+        const mx=(0.04+0.12*r())*w/2, my=(0.04+0.12*r())*h/2; const a0=x0+mx,a1=x1-mx,b0=y0+my,b1=y1-my; if(a1-a0<7||b1-b0<7)return; add(a0,b0,a1,b1); return; }
+      const t=0.38+0.24*r();
+      if(w>=h){ const c=x0+w*t; split(x0,y0,c-alley/2,y1,d+1); split(c+alley/2,y0,x1,y1,d+1); }
+      else{ const c=y0+h*t; split(x0,y0,x1,c-alley/2,d+1); split(x0,c+alley/2,x1,y1,d+1); }
+    };
+    for(let j=0;j<ax.length-1;j++)for(let i=0;i<ay.length-1;i++){
+      let x0=ax[j].p+ax[j].hw+2, x1=ax[j+1].p-ax[j+1].hw-2, y0=ay[i].p+ay[i].hw+2, y1=ay[i+1].p-ay[i+1].hw-2;
+      if((y0+y1)/2>=S/2)continue; if(x0<2)x0=2; if(x1>S-2)x1=S-2;
+      const yc2=(y0+y1)/2;
+      if(yc2<zoneH){ if(yc2>zoneH*0.5)continue; y0=Math.max(y0,3); y1=Math.min(y1,zoneH*0.27); } // тыловая полоса зоны расстановки: застройка только у самого края
+      else{ y0=Math.max(y0,zoneH+stHW+4); y1=Math.min(y1,S-zoneH-stHW-4); }
+      if(x1-x0<14||y1-y0<14)continue;
+      const dxp=Math.max(x0-S/2,0,S/2-x1), dyp=Math.max(y0-S/2,0,S/2-y1); if(Math.hypot(dxp,dyp)<R*2.3)continue;
+      if(r()<0.18)continue; // площадь или пустырь
+      split(x0,y0,x1,y1,0);
+    }
+  }
   m.flatPct=Math.round(100*(1-Math.min(1,area/(S*S))));
   return m;
 }
@@ -96,7 +139,7 @@ function createSim(bal,opts,players,armies,seed){
   const g=merge(bal.global,opts||{});
   const units=bal.units;
   const S=g.mapSize||1000;
-  const map=genMap(S,g,seed||1);
+  const map=genMap(S,g,g.mapSeed||seed||1);
   const sim={g,units,map,S,players:[],squads:[],sol:[],t:0,tick:0,phase:'deploy',phaseT:g.deployTime,events:[],pend:[],fires:[],winner:null,reason:'',fog:!!g.fog,
     pt:{owner:-1,prog:0,ctrlT:0,ctrlTeam:-1,inside:[0,0]},rand:rng((seed||1)*31+7),over:false};
   const DT=0.05; sim.DT=DT;
@@ -105,7 +148,7 @@ function createSim(bal,opts,players,armies,seed){
   const nT=[0,0]; players.forEach(p=>{p.idx=nT[p.team]++;});
   players.forEach((p,pi)=>{
     const k=nT[p.team];
-    sim.players.push({id:pi,name:p.name,team:p.team,bot:!!p.bot,human:!p.bot,ready:!!p.bot,x0:p.idx*S/k,x1:(p.idx+1)*S/k,squads:[],aiLevel:p.aiLevel||1,gone:false});
+    sim.players.push({id:pi,name:p.name,team:p.team,bot:!!p.bot,human:!p.bot,ready:!!p.bot,x0:p.idx*S/k,x1:(p.idx+1)*S/k,squads:[],aiLevel:p.aiLevel!=null?p.aiLevel:(g.aiLevel!=null?g.aiLevel:1),gone:false});
   });
   // отряды и бойцы
   armies.forEach((arm,pi)=>{
@@ -231,7 +274,14 @@ function createSim(bal,opts,players,armies,seed){
     if(t.hp<=0)die(t,a);
     return dmg;
   }
-  function losBlocked(x1,y1,x2,y2){ for(const q of map.rects){ if(segHitsRect(x1,y1,x2,y2,q))return true; } return false; }
+  const RG=40, RN=Math.ceil(S/RG)+1, rgrid=new Array(RN*RN); for(const q of map.rects){ const rr=Math.hypot(q.hw,q.hh); const a0=Math.max(0,Math.floor((q.x-rr)/RG)),a1=Math.min(RN-1,Math.floor((q.x+rr)/RG)),b0=Math.max(0,Math.floor((q.y-rr)/RG)),b1=Math.min(RN-1,Math.floor((q.y+rr)/RG)); for(let j=b0;j<=b1;j++)for(let i=a0;i<=a1;i++){ (rgrid[j*RN+i]||(rgrid[j*RN+i]=[])).push(q); } }
+  let rgStamp=0;
+  function losBlocked(x1,y1,x2,y2){
+    if(!map.rects.length)return false;
+    const a0=Math.max(0,Math.floor((Math.min(x1,x2)-1)/RG)),a1=Math.min(RN-1,Math.floor((Math.max(x1,x2)+1)/RG)),b0=Math.max(0,Math.floor((Math.min(y1,y2)-1)/RG)),b1=Math.min(RN-1,Math.floor((Math.max(y1,y2)+1)/RG));
+    if((a1-a0+1)*(b1-b0+1)>40){ for(const q of map.rects){ if(segHitsRect(x1,y1,x2,y2,q))return true; } return false; }
+    for(let j=b0;j<=b1;j++)for(let i=a0;i<=a1;i++){ const c=rgrid[j*RN+i]; if(!c)continue; for(const q of c){ if(segHitsRect(x1,y1,x2,y2,q))return true; } }
+    return false; }
   function pickWeapon(s,d){
     const ws=s.U.weapons; let best=-1;
     for(let i=0;i<ws.length;i++){const w=ws[i]; if(w.ammo!=null&&s.ammo[i]<=0)continue; if(d>=w.min-0.001&&(best<0||w.max>ws[best].max))best=i;}

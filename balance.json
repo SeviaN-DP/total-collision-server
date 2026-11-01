@@ -1,5 +1,5 @@
 {
- "version": "0.6.2",
+ "version": "0.6.3",
  "global": {
   "unitSpeed": 3,
   "soldierRadius": 0.45,
@@ -674,5 +674,192 @@
    "desc": "Бросают горшки: на земле остаётся огненная лужа 15 секунд. Огонь жжёт и своих.",
    "morale": 0.7
   }
- }
+ },
+ "maps": [
+  {
+   "id": "plain",
+   "name": "Открытая равнина",
+   "size": 1000,
+   "seed": 4,
+   "terrain": {
+    "walls": false,
+    "swamps": false,
+    "rocks": true,
+    "rivers": false,
+    "bridges": false,
+    "grass": true,
+    "density": 0.5,
+    "flatMin": 0.6
+   },
+   "desc": "Почти ровное поле с редкими камнями и пятнами травы. Решает построение."
+  },
+  {
+   "id": "bridges",
+   "name": "Речная переправа",
+   "size": 1000,
+   "seed": 404,
+   "terrain": {
+    "walls": true,
+    "swamps": false,
+    "rocks": false,
+    "rivers": true,
+    "bridges": true,
+    "grass": true,
+    "density": 1,
+    "flatMin": 0.4
+   },
+   "desc": "Две реки по диагонали с мостами и стенами. Бой идёт за переправы."
+  },
+  {
+   "id": "ford",
+   "name": "Брод",
+   "size": 1000,
+   "seed": 121,
+   "terrain": {
+    "walls": false,
+    "swamps": false,
+    "rocks": true,
+    "rivers": true,
+    "bridges": false,
+    "grass": true,
+    "density": 0.8,
+    "flatMin": 0.4
+   },
+   "desc": "Две реки без мостов: броды замедляют всех. Скалы и трава по сторонам."
+  },
+  {
+   "id": "marsh",
+   "name": "Болотная низина",
+   "size": 1000,
+   "seed": 633,
+   "terrain": {
+    "walls": false,
+    "swamps": true,
+    "rocks": true,
+    "rivers": false,
+    "bridges": false,
+    "grass": true,
+    "density": 1.5,
+    "flatMin": 0.4
+   },
+   "desc": "Большое болото, скалы и высокие травы. Конница вязнет, пехота обходит."
+  },
+  {
+   "id": "pass",
+   "name": "Горный перевал",
+   "size": 1000,
+   "seed": 8,
+   "terrain": {
+    "walls": false,
+    "swamps": false,
+    "rocks": true,
+    "rivers": false,
+    "bridges": false,
+    "grass": false,
+    "density": 1.5,
+    "flatMin": 0.2,
+    "rockLen": 1.8,
+    "rockN": 1.8
+   },
+   "desc": "Длинные цепи скал и узкие проходы между ними. Хорошо для обороны."
+  },
+  {
+   "id": "gorge",
+   "name": "Тесное ущелье",
+   "size": 750,
+   "seed": 105,
+   "terrain": {
+    "walls": false,
+    "swamps": false,
+    "rocks": true,
+    "rivers": false,
+    "bridges": false,
+    "grass": false,
+    "density": 2,
+    "flatMin": 0.15,
+    "rockLen": 1.6,
+    "rockN": 2.2
+   },
+   "desc": "Малая карта: тесные проходы между скальными грядами."
+  },
+  {
+   "id": "highland",
+   "name": "Высокогорье",
+   "size": 1500,
+   "seed": 202,
+   "terrain": {
+    "walls": false,
+    "swamps": true,
+    "rocks": true,
+    "rivers": true,
+    "bridges": false,
+    "grass": true,
+    "density": 1.3,
+    "flatMin": 0.25,
+    "rockLen": 2,
+    "rockN": 1.5
+   },
+   "desc": "Большая горная карта: скалы, болота, трава и реки с бродами."
+  },
+  {
+   "id": "oldtown",
+   "name": "Старый город",
+   "size": 1000,
+   "seed": 622,
+   "terrain": {
+    "walls": false,
+    "swamps": false,
+    "rocks": false,
+    "rivers": false,
+    "bridges": false,
+    "grass": false,
+    "density": 1,
+    "flatMin": 0.4,
+    "city": true,
+    "cityK": 1,
+    "cityFill": 0.9
+   },
+   "desc": "Городские кварталы: два широких проспекта, улицы и площадь в центре. Бой идёт за каждый перекрёсток."
+  },
+  {
+   "id": "bazaar",
+   "name": "Торговый квартал",
+   "size": 750,
+   "seed": 312,
+   "terrain": {
+    "walls": false,
+    "swamps": false,
+    "rocks": false,
+    "rivers": false,
+    "bridges": false,
+    "grass": false,
+    "density": 1,
+    "flatMin": 0.4,
+    "city": true,
+    "cityK": 0.85,
+    "cityFill": 0.95
+   },
+   "desc": "Малый плотный квартал: короткие дистанции, тесные улицы и проходы между домами."
+  },
+  {
+   "id": "bigcity",
+   "name": "Большой город",
+   "size": 1500,
+   "seed": 43,
+   "terrain": {
+    "walls": false,
+    "swamps": false,
+    "rocks": false,
+    "rivers": false,
+    "bridges": false,
+    "grass": false,
+    "density": 1,
+    "flatMin": 0.4,
+    "city": true,
+    "cityK": 1,
+    "cityFill": 0.9
+   },
+   "desc": "Большой город: много кварталов, обходные улицы и площадь в центре."
+  }
+ ]
 }
