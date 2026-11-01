@@ -1,0 +1,678 @@
+{
+ "version": "0.6.2",
+ "global": {
+  "unitSpeed": 3,
+  "soldierRadius": 0.45,
+  "turnRate": 5,
+  "turnRateCav": 3,
+  "regenDelay": 30,
+  "regenRate": 0.02,
+  "regenCap": 0.7,
+  "swapTime": 1,
+  "axeStep": 20,
+  "charge": {
+   "accel": 30,
+   "decel": 150,
+   "minSpeed": 150,
+   "stopSector": 45
+  },
+  "wrapAngle": 270,
+  "maxAttackersPerTarget": 3,
+  "fileSpacing": 1.2,
+  "rankSpacing": 1.4,
+  "sight": 150,
+  "grassSight": 15,
+  "pointCtrlTime": 5,
+  "pointCaptureTime": 100,
+  "pointRadiusK": 0.03,
+  "pointRadiusMin": 18,
+  "deployTime": 40,
+  "battleTime": 420,
+  "zonePct": 30,
+  "squadScale": 2,
+  "budgetPerSquad": 950,
+  "limits": {
+   "1v1": 4,
+   "2v2": 3,
+   "3v3": 2
+  },
+  "squadsPerPlayer": {
+   "1v1": 12,
+   "2v2": 6,
+   "3v3": 4
+  },
+  "terrain": {
+   "walls": true,
+   "swamps": true,
+   "rocks": true,
+   "rivers": true,
+   "bridges": true,
+   "grass": true,
+   "density": 1,
+   "flatMin": 0.4
+  },
+  "mapSizes": [
+   500,
+   750,
+   1000,
+   1500,
+   2000
+  ],
+  "morale": true,
+  "fog": true
+ },
+ "units": {
+  "sword": {
+   "name": "Мечники",
+   "cat": "canon",
+   "role": "melee",
+   "hp": 200,
+   "armor": 35,
+   "shield": 25,
+   "arc": 180,
+   "speed": 100,
+   "size": 40,
+   "ranks": 4,
+   "cost": 800,
+   "weapons": [
+    {
+     "id": "sword",
+     "name": "меч",
+     "dmg": 60,
+     "cd": 1,
+     "min": 0,
+     "max": 1.3,
+     "kind": "melee",
+     "fx": {}
+    }
+   ],
+   "abilities": [],
+   "desc": "Универсальная пехота. Надёжна в любом бою.",
+   "morale": 1.2
+  },
+  "axe": {
+   "name": "Топорники",
+   "cat": "canon",
+   "role": "melee",
+   "hp": 180,
+   "armor": 10,
+   "shield": 0,
+   "arc": 0,
+   "speed": 110,
+   "size": 40,
+   "ranks": 4,
+   "cost": 800,
+   "weapons": [
+    {
+     "id": "axe",
+     "name": "топор",
+     "dmg": 70,
+     "cd": 0.9,
+     "min": 0,
+     "max": 1.7,
+     "kind": "melee",
+     "fx": {
+      "axe": true
+     }
+    }
+   ],
+   "abilities": [],
+   "desc": "Быстрые, но почти без брони. Рубят щиты и латы.",
+   "morale": 1
+  },
+  "spear": {
+   "name": "Копейщики",
+   "cat": "canon",
+   "role": "melee",
+   "hp": 240,
+   "armor": 60,
+   "shield": 40,
+   "arc": 120,
+   "speed": 85,
+   "size": 40,
+   "ranks": 4,
+   "cost": 850,
+   "weapons": [
+    {
+     "id": "spear",
+     "name": "копьё",
+     "dmg": 45,
+     "cd": 1.2,
+     "min": 0,
+     "max": 2,
+     "kind": "melee",
+     "fx": {}
+    }
+   ],
+   "abilities": [
+    "antiCav"
+   ],
+   "desc": "Гасят чардж конницы и держат строй.",
+   "morale": 1.4
+  },
+  "pike": {
+   "name": "Пикинеры",
+   "cat": "canon",
+   "role": "melee",
+   "hp": 200,
+   "armor": 20,
+   "shield": 0,
+   "arc": 0,
+   "speed": 90,
+   "size": 40,
+   "ranks": 5,
+   "cost": 850,
+   "weapons": [
+    {
+     "id": "pike",
+     "name": "пика",
+     "dmg": 70,
+     "cd": 1.5,
+     "min": 3,
+     "max": 5,
+     "kind": "melee",
+     "fx": {}
+    },
+    {
+     "id": "psword",
+     "name": "меч",
+     "dmg": 40,
+     "cd": 1,
+     "min": 0,
+     "max": 1.8,
+     "kind": "melee",
+     "fx": {}
+    }
+   ],
+   "abilities": [
+    "antiCav"
+   ],
+   "desc": "Длинные пики в первых рядах, вблизи слабы.",
+   "morale": 1
+  },
+  "archer": {
+   "name": "Лучники",
+   "cat": "canon",
+   "role": "ranged",
+   "hp": 140,
+   "armor": 5,
+   "shield": 0,
+   "arc": 0,
+   "speed": 95,
+   "size": 30,
+   "ranks": 2,
+   "cost": 800,
+   "weapons": [
+    {
+     "id": "bow",
+     "name": "лук",
+     "dmg": 20,
+     "cd": 1.2,
+     "min": 5,
+     "max": 50,
+     "kind": "ranged",
+     "ammo": 30,
+     "fx": {}
+    },
+    {
+     "id": "dagger",
+     "name": "кинжал",
+     "dmg": 25,
+     "cd": 1,
+     "min": 0,
+     "max": 1.5,
+     "kind": "melee",
+     "fx": {}
+    }
+   ],
+   "abilities": [],
+   "desc": "Дальний огонь. Слабы в рукопашной.",
+   "morale": 0.6
+  },
+  "peltast": {
+   "name": "Пельтасты",
+   "cat": "canon",
+   "role": "ranged",
+   "hp": 180,
+   "armor": 20,
+   "shield": 10,
+   "arc": 90,
+   "speed": 105,
+   "size": 30,
+   "ranks": 3,
+   "cost": 800,
+   "weapons": [
+    {
+     "id": "pilum",
+     "name": "пилум",
+     "dmg": 75,
+     "cd": 1.2,
+     "min": 8,
+     "max": 10,
+     "kind": "ranged",
+     "ammo": 6,
+     "fx": {
+      "pilum": true
+     }
+    },
+    {
+     "id": "psw2",
+     "name": "кинжал",
+     "dmg": 45,
+     "cd": 1,
+     "min": 0,
+     "max": 1.8,
+     "kind": "melee",
+     "fx": {}
+    }
+   ],
+   "abilities": [],
+   "desc": "Метают пилумы: ломают щиты и игнорируют броню.",
+   "morale": 0.8
+  },
+  "cav": {
+   "name": "Катафракты",
+   "cat": "canon",
+   "role": "cav",
+   "hp": 250,
+   "armor": 35,
+   "shield": 0,
+   "arc": 0,
+   "speed": 100,
+   "maxSpeed": 400,
+   "size": 20,
+   "ranks": 2,
+   "cost": 1300,
+   "weapons": [
+    {
+     "id": "lance",
+     "name": "копьё всадника",
+     "dmg": 50,
+     "cd": 1.1,
+     "min": 0,
+     "max": 2.2,
+     "kind": "melee",
+     "fx": {}
+    }
+   ],
+   "abilities": [
+    "charge"
+   ],
+   "wide": true,
+   "desc": "Разгоняется сама. Ломает строй, но боится копий.",
+   "morale": 1.3
+  },
+  "shieldwall": {
+   "name": "Щитоносцы",
+   "cat": "canon",
+   "role": "melee",
+   "hp": 260,
+   "armor": 70,
+   "shield": 50,
+   "arc": 150,
+   "speed": 70,
+   "size": 40,
+   "ranks": 4,
+   "cost": 1000,
+   "weapons": [
+    {
+     "id": "spear",
+     "name": "копьё",
+     "dmg": 35,
+     "cd": 1.2,
+     "min": 0,
+     "max": 2.5,
+     "kind": "melee",
+     "fx": {}
+    }
+   ],
+   "abilities": [
+    "shieldWall"
+   ],
+   "desc": "Медленные, но почти несокрушимые в строю.",
+   "morale": 1.5
+  },
+  "xbow": {
+   "name": "Арбалетчики",
+   "cat": "canon",
+   "role": "ranged",
+   "hp": 120,
+   "armor": 10,
+   "shield": 0,
+   "arc": 0,
+   "speed": 90,
+   "size": 30,
+   "ranks": 2,
+   "cost": 700,
+   "weapons": [
+    {
+     "id": "xb",
+     "name": "арбалет",
+     "dmg": 70,
+     "cd": 3.5,
+     "min": 30,
+     "max": 70,
+     "kind": "ranged",
+     "ammo": 20,
+     "fx": {
+      "armorPierce": 0.5
+     }
+    },
+    {
+     "id": "xdag",
+     "name": "кинжал",
+     "dmg": 20,
+     "cd": 0.8,
+     "min": 0,
+     "max": 1.5,
+     "kind": "melee",
+     "fx": {}
+    }
+   ],
+   "abilities": [],
+   "desc": "Короче дальность, но болты пробивают броню.",
+   "morale": 0.6
+  },
+  "berserk": {
+   "name": "Берсерки",
+   "cat": "canon",
+   "role": "melee",
+   "hp": 500,
+   "armor": 0,
+   "shield": 0,
+   "arc": 0,
+   "speed": 125,
+   "size": 15,
+   "ranks": 4,
+   "cost": 900,
+   "weapons": [
+    {
+     "id": "axes",
+     "name": "два боевых топора",
+     "dmg": 50,
+     "cd": 0.7,
+     "min": 0,
+     "max": 1.2,
+     "kind": "melee",
+     "fx": {}
+    }
+   ],
+   "abilities": [
+    "berserk",
+    "fear"
+   ],
+   "desc": "Без брони, быстры и яростны, не бегут с поля боя. Пугают врагов рядом.",
+   "morale": 9999
+  },
+  "priest": {
+   "name": "Жрецы",
+   "cat": "canon",
+   "role": "melee",
+   "hp": 160,
+   "armor": 10,
+   "shield": 0,
+   "arc": 0,
+   "speed": 95,
+   "size": 24,
+   "ranks": 3,
+   "cost": 800,
+   "weapons": [
+    {
+     "id": "staff",
+     "name": "посох",
+     "dmg": 20,
+     "cd": 1.2,
+     "min": 0,
+     "max": 1.8,
+     "kind": "melee",
+     "fx": {}
+    }
+   ],
+   "abilities": [
+    "inspire"
+   ],
+   "desc": "Слабо бьют, но поднимают мораль союзников рядом.",
+   "morale": 3
+  },
+  "hxbow": {
+   "name": "Конные лучники",
+   "cat": "canon",
+   "role": "cav",
+   "hp": 140,
+   "armor": 10,
+   "shield": 0,
+   "arc": 0,
+   "speed": 100,
+   "maxSpeed": 250,
+   "size": 20,
+   "ranks": 2,
+   "cost": 1000,
+   "weapons": [
+    {
+     "id": "hbow",
+     "name": "лук",
+     "dmg": 12,
+     "cd": 1.2,
+     "min": 5,
+     "max": 60,
+     "kind": "ranged",
+     "ammo": 30,
+     "fx": {}
+    },
+    {
+     "id": "hknife",
+     "name": "кинжал",
+     "dmg": 20,
+     "cd": 0.8,
+     "min": 0,
+     "max": 1.8,
+     "kind": "melee",
+     "fx": {}
+    }
+   ],
+   "abilities": [
+    "mountedFire",
+    "noCharge"
+   ],
+   "wide": true,
+   "desc": "Стреляют на скаку. Изматывают врага.",
+   "morale": 0.9
+  },
+  "hsword": {
+   "name": "Конные мечники",
+   "cat": "canon",
+   "role": "cav",
+   "hp": 230,
+   "armor": 28,
+   "shield": 0,
+   "arc": 0,
+   "speed": 100,
+   "maxSpeed": 400,
+   "size": 20,
+   "ranks": 2,
+   "cost": 1200,
+   "weapons": [
+    {
+     "id": "hsw",
+     "name": "меч всадника",
+     "dmg": 60,
+     "cd": 1,
+     "min": 0,
+     "max": 1.8,
+     "kind": "melee",
+     "fx": {}
+    }
+   ],
+   "abilities": [
+    "charge"
+   ],
+   "wide": true,
+   "desc": "Лёгкая ударная конница: меч, неплохой доспех, быстрый разгон.",
+   "morale": 1.2
+  },
+  "falx": {
+   "name": "Фалксмены",
+   "cat": "canon",
+   "role": "melee",
+   "hp": 170,
+   "armor": 3,
+   "shield": 0,
+   "arc": 0,
+   "speed": 118,
+   "size": 40,
+   "ranks": 4,
+   "cost": 850,
+   "weapons": [
+    {
+     "id": "falx",
+     "name": "фалкс",
+     "dmg": 80,
+     "cd": 1,
+     "min": 0,
+     "max": 1.9,
+     "kind": "melee",
+     "fx": {
+      "ignoreShield": true
+     }
+    }
+   ],
+   "abilities": [],
+   "desc": "Двуручный изогнутый клинок обходит щит. Почти без брони.",
+   "morale": 1
+  },
+  "scorpion": {
+   "name": "Скорпионы",
+   "cat": "canon",
+   "role": "ranged",
+   "hp": 200,
+   "armor": 15,
+   "shield": 0,
+   "arc": 0,
+   "speed": 60,
+   "size": 4,
+   "ranks": 1,
+   "cost": 1100,
+   "weapons": [
+    {
+     "id": "scor",
+     "name": "болт скорпиона",
+     "dmg": 120,
+     "cd": 4,
+     "min": 15,
+     "max": 110,
+     "kind": "ranged",
+     "ammo": 24,
+     "fx": {
+      "pierce": true,
+      "width": 1.0,
+      "maxHits": 10
+     }
+    },
+    {
+     "id": "scdag",
+     "name": "кинжал",
+     "dmg": 25,
+     "cd": 1,
+     "min": 0,
+     "max": 1.5,
+     "kind": "melee",
+     "fx": {}
+    }
+   ],
+   "abilities": [],
+   "wide": true,
+   "desc": "Тяжёлая стрела насквозь пробивает целую линию бойцов.",
+   "morale": 0.8
+  },
+  "onager": {
+   "name": "Онагры",
+   "cat": "canon",
+   "role": "ranged",
+   "hp": 220,
+   "armor": 15,
+   "shield": 0,
+   "arc": 0,
+   "speed": 45,
+   "size": 3,
+   "ranks": 1,
+   "cost": 1300,
+   "weapons": [
+    {
+     "id": "onag",
+     "name": "камень",
+     "dmg": 130,
+     "cd": 9,
+     "min": 40,
+     "max": 150,
+     "kind": "ranged",
+     "ammo": 14,
+     "fx": {
+      "area": 4.0,
+      "scatter": 0.1,
+      "shock": 1.0,
+      "speed": 60
+     }
+    },
+    {
+     "id": "ondag",
+     "name": "кинжал",
+     "dmg": 25,
+     "cd": 1,
+     "min": 0,
+     "max": 1.5,
+     "kind": "melee",
+     "fx": {}
+    }
+   ],
+   "abilities": [],
+   "wide": true,
+   "desc": "Навесом мечет камни по площади. Плохо целится вблизи и в движущихся.",
+   "morale": 0.8
+  },
+  "fpot": {
+   "name": "Поджигатели",
+   "cat": "canon",
+   "role": "ranged",
+   "hp": 150,
+   "armor": 8,
+   "shield": 0,
+   "arc": 0,
+   "speed": 105,
+   "size": 15,
+   "ranks": 3,
+   "cost": 900,
+   "weapons": [
+    {
+     "id": "pot",
+     "name": "горшок с огнём",
+     "dmg": 14,
+     "cd": 2.2,
+     "min": 4,
+     "max": 22,
+     "kind": "ranged",
+     "ammo": 6,
+     "fx": {
+      "fire": true,
+      "radius": 3.0,
+      "dur": 15,
+      "scatter": 0.1,
+      "speed": 22
+     }
+    },
+    {
+     "id": "potdag",
+     "name": "кинжал",
+     "dmg": 30,
+     "cd": 0.9,
+     "min": 0,
+     "max": 1.6,
+     "kind": "melee",
+     "fx": {}
+    }
+   ],
+   "abilities": [],
+   "desc": "Бросают горшки: на земле остаётся огненная лужа 15 секунд. Огонь жжёт и своих.",
+   "morale": 0.7
+  }
+ }
+}

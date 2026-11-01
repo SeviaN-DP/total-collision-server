@@ -3,6 +3,7 @@
    Записи атомарные: сначала во временный файл, потом переименование. */
 'use strict';
 const fs=require('fs'), path=require('path'), crypto=require('crypto');
+let Ranked=null; try{ Ranked=require('./ranked.js'); }catch(e){ console.error('Рейтинговый режим отключён:',e.message); }
 function pickDir(){ if(process.env.DATA_DIR)return process.env.DATA_DIR; try{ fs.accessSync('/data',fs.constants.W_OK); return '/data'; }catch(e){} return path.join(__dirname,'data'); }
 const DATA_DIR=pickDir();
 const DM_DIR=path.join(DATA_DIR,'dm');
@@ -52,15 +53,15 @@ function unreadOf(me,fid){ const l=dmList(me.id,fid), rd=(me.read&&me.read[fid])
 function stateFor(me){
   const friends=me.friends.map(id=>db.users[id]).filter(Boolean).map(u=>({id:u.id,nick:u.nick,online:isOnline(u.id),unread:unreadOf(me,u.id)}));
   const reqIn=me.reqIn.map(id=>db.users[id]).filter(Boolean).map(pub), reqOut=me.reqOut.map(id=>db.users[id]).filter(Boolean).map(pub);
-  return {t:'state',me:pub(me),friends,reqIn,reqOut};
+  return {t:'state',me:Object.assign(pub(me),{rating:me.rating|0,w:me.w|0,l:me.l|0,d:me.d|0}),friends,reqIn,reqOut,favs:me.favs||[],rk:Ranked?Ranked.status(me.id):'',rkv:Ranked?Ranked.version:''};
 }
 function pushState(id){ const u=db.users[id], s=online.get(id); if(!u||!s)return; const st=stateFor(u); for(const w of s)send(w,st); }
 function pushPresence(me){ for(const fid of me.friends){ const s=online.get(fid); if(!s)continue; for(const w of s)send(w,{t:'presence',id:me.id,online:isOnline(me.id)}); } }
 function attach(ws,u){
   ws.uid=u.id; let s=online.get(u.id); if(!s){s=new Set();online.set(u.id,s);} const first=s.size===0; s.add(ws);
-  send(ws,stateFor(u)); if(first)pushPresence(u);
+  send(ws,stateFor(u)); if(first)pushPresence(u); if(Ranked)Ranked.attach(u.id);
 }
-function closed(ws){ if(!ws.uid)return; const s=online.get(ws.uid); if(!s)return; s.delete(ws); if(!s.size){ online.delete(ws.uid); const u=db.users[ws.uid]; if(u)pushPresence(u); } }
+function closed(ws){ if(!ws.uid)return; const s=online.get(ws.uid); if(!s)return; s.delete(ws); if(!s.size){ online.delete(ws.uid); const u=db.users[ws.uid]; if(u)pushPresence(u); if(Ranked)Ranked.offline(ws.uid); } }
 
 /* ---------- вход ---------- */
 function handshake(ws,m,req){
@@ -102,7 +103,7 @@ function wire(ws){ ws.acctReady=true; ws.mc=[]; }
 /* ---------- сообщения после входа ---------- */
 function message(ws,data,isBin){
   if(isBin||!ws.uid)return; const txt=data.toString(); if(txt.length>4000)return;
-  const now=Date.now(); ws.mc=ws.mc.filter(t=>now-t<5000); ws.mc.push(now); if(ws.mc.length>40){ send(ws,{t:'err',e:'rate'}); return; }
+  const now=Date.now(); ws.mc=ws.mc.filter(t=>now-t<5000); ws.mc.push(now); if(ws.mc.length>160){ send(ws,{t:'err',e:'rate'}); return; }
   let m; try{m=JSON.parse(txt);}catch(e){return;} const me=db.users[ws.uid]; if(!me)return;
   switch(m.t){
     case 'ping': return;
@@ -125,7 +126,9 @@ function message(ws,data,isBin){
       const l=dmList(me.id,id); const msg={id:(l.length?l[l.length-1].id:0)+1,from:me.id,to:id,text,ts:Date.now()}; l.push(msg); if(l.length>MAX_DM)l.splice(0,l.length-MAX_DM);
       dmDirty.add(pairKey(me.id,id));
       for(const w of online.get(me.id)||[])send(w,{t:'dm',m:msg}); for(const w of online.get(id)||[])send(w,{t:'dm',m:msg}); return; }
+    case 'favs': { if(!Array.isArray(m.list))return; me.favs=m.list.filter(x=>typeof x==='string'&&/^[A-Za-z0-9_]{1,24}$/.test(x)).slice(0,60); saveU(); return; }
     case 'logout': { const h=sha(String(m.token||'')); if(db.tokens[h]&&db.tokens[h].uid===me.id){ delete db.tokens[h]; saveT(); } send(ws,{t:'bye'}); ws.close(); return; }
+    default: if(Ranked)Ranked.message(me,ws,m);
   }
 }
 function markRead(me,id){ const l=dmList(me.id,id); const last=l.length?l[l.length-1].ts:0; me.read=me.read||{}; if((me.read[id]||0)<last){ me.read[id]=last; saveU(); } pushState(me.id); }
@@ -134,4 +137,7 @@ function befriend(a,b){
   if(!a.friends.includes(b.id))a.friends.push(b.id); if(!b.friends.includes(a.id))b.friends.push(a.id); saveU(); pushState(a.id); pushState(b.id);
 }
 
+if(Ranked)Ranked.init({users:db.users,save:saveU,isOnline,relOf,pushState,
+  sendTo:(uid,o)=>{ const s=online.get(uid); if(s)for(const w of s)send(w,o); },
+  sendBin:(uid,buf)=>{ const s=online.get(uid); if(s)for(const w of s){ if(w.readyState===1){ try{w.send(buf,{binary:true});}catch(e){} } } }});
 module.exports={handshake,message,closed,flush,onlineCount};
