@@ -46,7 +46,7 @@ function mk(a,b){
 function dropMatch(m){ clearTimeout(m.timer); matches.delete(m.id); for(const p of m.ps)if(userMatch.get(p.uid)===m.id)userMatch.delete(p.uid); }
 function cancelAccept(m,badUid){ // отказавший уходит, принявший возвращается в очередь
   if(m.state!=='accept')return; dropMatch(m);
-  for(const p of m.ps){ if(p.uid===badUid||!p.acc){ send(p.uid,{t:'rcancel',why:p.uid===badUid?'self':'timeout'}); } else { send(p.uid,{t:'rcancel',why:'opp',requeue:true}); queue.unshift(p.uid); } }
+  for(const p of m.ps){ if(badUid?p.uid===badUid:!p.acc){ send(p.uid,{t:'rcancel',why:p.uid===badUid?'self':'timeout'}); } else { send(p.uid,{t:'rcancel',why:'opp',requeue:true}); queue.unshift(p.uid); } }
   qn(); tick();
 }
 function acceptTimeout(m){ if(m.state==='accept')cancelAccept(m,null); }
@@ -94,6 +94,38 @@ function finish(m){
   setTimeout(()=>matches.delete(m.id),60000); tick();
 }
 
+
+/* ---------- история обычных боёв (лобби) ----------
+   Участники сами сообщают «я в комнате CODE» (nin), хост — состав при старте (nbeg) и итог (nend).
+   Запись получают все участники с аккаунтом, включая вышедших; бой без итога (хост ушёл) — «прервано». */
+const nrooms=new Map(), nbat=new Map();
+const UNITS=bal.units;
+function cleanCounts(c){ const o={}; if(c&&typeof c==='object'){ for(const k of Object.keys(c)){ if(!UNITS[k])continue; const v=Math.min(999,c[k]|0); if(v>0)o[k]=v; } } return o; }
+function nin(uid,m){ const c=String(m.code||'').toUpperCase().slice(0,8); if(c.length<4)return;
+  let r=nrooms.get(c); if(!r){ r={m:new Map(),ts:0}; nrooms.set(c,r); } r.ts=Date.now(); r.m.set(uid,String(m.name||'').slice(0,24));
+  if(nrooms.size>400){ const old=Date.now()-6*3600*1000; for(const [k,v] of nrooms)if(v.ts<old)nrooms.delete(k); } }
+function nout(uid,m){ const r=nrooms.get(String(m.code||'').toUpperCase()); if(r)r.m.delete(uid); }
+function nbeg(uid,m){ const code=String(m.code||'').toUpperCase().slice(0,8), r=nrooms.get(code); if(!r||!r.m.has(uid)||!Array.isArray(m.players))return;
+  const players=m.players.slice(0,8).map(p=>({name:String(p&&p.name||'').slice(0,24),team:(p&&p.team|0),human:!!(p&&p.human)}));
+  if(players.filter(p=>p.human).length<2)return;
+  const armies=players.map((p,i)=>cleanCounts(m.armies&&m.armies[i])); const used=new Set(), parts=[];
+  players.forEach((p,i)=>{ if(!p.human)return; for(const [u,nm] of r.m){ if(!used.has(u)&&nm===p.name){ used.add(u); parts.push({uid:u,i}); break; } } });
+  if(!parts.some(x=>x.uid===uid))return;
+  nbat.set(code,{host:uid,ts:Date.now(),players,armies,parts}); nrooms.delete(code); }
+function nfinish(code,m,aborted){ const b=nbat.get(code); if(!b)return; nbat.delete(code);
+  let st=null; if(!aborted&&Array.isArray(m.st)&&JSON.stringify(m.st).length<80000)st=m.st;
+  const w=(!aborted&&m.winner!=null)?(m.winner|0):-1, ids=b.players.map((p,i)=>{ const x=b.parts.find(q=>q.i===i); return x?x.uid:0; });
+  for(const pt of b.parts){ const u=urec(pt.uid); if(!u)continue; const me=b.players[pt.i], tm=me.team;
+    const res=aborted?'x':(w<0?'d':(w===tm?'w':'l'));
+    const foes=b.players.map((p,i)=>i).filter(i=>b.players[i].team!==tm), f0=foes.find(i=>ids[i])||foes[0], oc={}; for(const i of foes)for(const k in b.armies[i])oc[k]=(oc[k]||0)+b.armies[i][k];
+    u.hist=u.hist||[]; const hid=(u.hist.length?u.hist[u.hist.length-1].hid:0)+1;
+    const opp=f0!=null?{id:ids[f0]||0,nick:b.players[f0].name}:{id:0,nick:'—'};
+    u.hist.push({hid,ts:Date.now(),mode:'norm',res,delta:0,rating:u.rating|0,reason:aborted?'abort':String(m.reason||'').slice(0,20),dur:Math.max(0,Math.min(99999,m.dur|0)),me:pt.i,opp,a:b.armies[pt.i],b:oc,st,ids,pl:b.players.map(p=>({name:p.name,team:p.team}))});
+    if(u.hist.length>HIST_MAX)u.hist.splice(0,u.hist.length-HIST_MAX); }
+  api.save(); for(const pt of b.parts)api.pushState(pt.uid); }
+function nend(uid,m){ const code=String(m.code||'').toUpperCase(), b=nbat.get(code); if(!b||b.host!==uid)return; nfinish(code,m,!!m.abort); }
+function nhostGone(uid){ for(const [code,b] of [...nbat])if(b.host===uid)nfinish(code,{},true); }
+
 /* ---------- входящие сообщения ---------- */
 function histBrief(e){ return {hid:e.hid,ts:e.ts,mode:e.mode,res:e.res,delta:e.delta,rating:e.rating,opp:e.opp,a:e.a,b:e.b,dur:e.dur}; }
 function message(me,ws,m){
@@ -104,6 +136,10 @@ function message(me,ws,m){
       if(m.ver!==bal.version){ send(uid,{t:'rerr',e:'ver',v:bal.version}); return; }
       if(userMatch.has(uid)){ send(uid,{t:'rerr',e:'busy'}); return; }
       joinQueue(uid); return; }
+    case 'nin': nin(uid,m); return;
+    case 'nout': nout(uid,m); return;
+    case 'nbeg': nbeg(uid,m); return;
+    case 'nend': nend(uid,m); return;
     case 'racc': accept(uid); return;
     case 'rdec': { const m2=matches.get(userMatch.get(uid)); if(m2&&m2.state==='accept')cancelAccept(m2,uid); return; }
     case 'rarmy': setArmy(uid,m.c); return;
@@ -130,7 +166,7 @@ function attach(uid){ // вошёл или обновил страницу
   else if(m.state==='pick')sendPick(m,p);
   else if(m.state==='battle'){ const s=m.start; send(uid,{t:'rinit',opts:s.opts,players:s.players,armies:s.armies,seed:s.seed,you:idxOf(m,uid),opp:pinfo(m.ps.find(x=>x!==p).uid),resume:true}); }
 }
-function offline(uid){ leaveQueue(uid); const m=matches.get(userMatch.get(uid)); if(m&&m.state==='accept')cancelAccept(m,uid); }
+function offline(uid){ nhostGone(uid); leaveQueue(uid); const m=matches.get(userMatch.get(uid)); if(m&&m.state==='accept')cancelAccept(m,uid); }
 function status(uid){ return userMatch.has(uid)?'match':inQueue(uid)?'queue':''; }
 function init(a){ api=a; }
 module.exports={init,message,attach,offline,status,version:bal.version};

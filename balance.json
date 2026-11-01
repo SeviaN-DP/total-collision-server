@@ -1,5 +1,5 @@
 {
- "version": "0.6.3",
+ "version": "0.6.4",
  "global": {
   "unitSpeed": 3,
   "soldierRadius": 0.45,
@@ -800,66 +800,6 @@
     "rockN": 1.5
    },
    "desc": "Большая горная карта: скалы, болота, трава и реки с бродами."
-  },
-  {
-   "id": "oldtown",
-   "name": "Старый город",
-   "size": 1000,
-   "seed": 622,
-   "terrain": {
-    "walls": false,
-    "swamps": false,
-    "rocks": false,
-    "rivers": false,
-    "bridges": false,
-    "grass": false,
-    "density": 1,
-    "flatMin": 0.4,
-    "city": true,
-    "cityK": 1,
-    "cityFill": 0.9
-   },
-   "desc": "Городские кварталы: два широких проспекта, улицы и площадь в центре. Бой идёт за каждый перекрёсток."
-  },
-  {
-   "id": "bazaar",
-   "name": "Торговый квартал",
-   "size": 750,
-   "seed": 312,
-   "terrain": {
-    "walls": false,
-    "swamps": false,
-    "rocks": false,
-    "rivers": false,
-    "bridges": false,
-    "grass": false,
-    "density": 1,
-    "flatMin": 0.4,
-    "city": true,
-    "cityK": 0.85,
-    "cityFill": 0.95
-   },
-   "desc": "Малый плотный квартал: короткие дистанции, тесные улицы и проходы между домами."
-  },
-  {
-   "id": "bigcity",
-   "name": "Большой город",
-   "size": 1500,
-   "seed": 43,
-   "terrain": {
-    "walls": false,
-    "swamps": false,
-    "rocks": false,
-    "rivers": false,
-    "bridges": false,
-    "grass": false,
-    "density": 1,
-    "flatMin": 0.4,
-    "city": true,
-    "cityK": 1,
-    "cityFill": 0.9
-   },
-   "desc": "Большой город: много кварталов, обходные улицы и площадь в центре."
   }
  ]
 }

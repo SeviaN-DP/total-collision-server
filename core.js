@@ -168,8 +168,14 @@ function createSim(bal,opts,players,armies,seed){
     });
   });
   /* ------- геометрия строя ------- */
+  function maxW(sq,n){ const mr=Math.max(2,Math.min(3,sq.U.ranks||2)); return Math.max(2,Math.ceil(n/mr)); }
   function slotXY(sq,i,o){
-    const n=sq.nAlive, w=Math.max(1,Math.min(sq.width,n)), row=(i/w)|0, f=i%w, inRow=Math.min(w,n-row*w);
+    const n=sq.nAlive, w=Math.max(1,Math.min(sq.width,n,maxW(sq,n)));
+    let row,f,inRow;
+    if(sq.form==='wedge'&&w>=3){ // клин: ряды 1,3,5… бойцов, дальше полные ряды
+      let r=0,rem=i,cnt=1; for(;;){ const c=Math.min(cnt,w,n-(i-rem)); if(rem<c){ inRow=c; f=rem; break; } rem-=c; r++; cnt=cnt<w?cnt+2:w; }
+      row=r;
+    } else { row=(i/w)|0; f=i%w; inRow=Math.min(w,n-row*w); }
     const fc=sq.mar?sq.wf:sq.face, bx=sq.mar?sq.wx:sq.cx, by=sq.mar?sq.wy:sq.cy;
     const lat=(f-(inRow-1)/2)*sq.fsp, dep=row*sq.rsp, fx=Math.cos(fc), fy=Math.sin(fc);
     o.x=bx-fy*lat-fx*dep; o.y=by+fx*lat-fy*dep; return o;
@@ -226,11 +232,11 @@ function createSim(bal,opts,players,armies,seed){
     const sq=sim.squads[sqId]; if(!sq||sq.nAlive<=0||sq.routed||sim.phase!=='battle')return false;
     switch(o.k){
       case 'move': {
-        sq.order={k:'move'}; sq.cx=clamp(o.x,2,S-2); sq.cy=clamp(o.y,2,S-2);
+        sq.order={k:'move'}; sq.form='line'; sq.cx=clamp(o.x,2,S-2); sq.cy=clamp(o.y,2,S-2);
         if(o.face!=null)sq.face=o.face; else { const dx=sq.cx-sq.mx,dy=sq.cy-sq.my; if(Math.hypot(dx,dy)>3)sq.face=Math.atan2(dy,dx); }
         if(o.width)sq.width=clamp(Math.round(o.width),1,sq.nAlive); sq.run=!!o.run; reslot(sq); break; }
-      case 'attack': { const t=sim.squads[o.target]; if(!t||t.team===sq.team||t.nAlive<=0)return false; sq.order={k:'attack',target:t.id}; sq.run=true; sq.tgSeen=false; sq.pg=null; break; }
-      case 'stop': { reslot(sq); sq.cx=sq.mx; sq.cy=sq.my; sq.order={k:'hold'}; break; }
+      case 'attack': { const t=sim.squads[o.target]; if(!t||t.team===sq.team||t.nAlive<=0)return false; sq.order={k:'attack',target:t.id}; sq.run=true; sq.tgSeen=false; sq.pg=null; sq.form=(sq.U.role==='cav'&&!sq.ranged&&!sq.U.abilities.includes('mountedFire')&&Math.hypot(t.mx-sq.mx,t.my-sq.my)>40)?'wedge':'line'; break; }
+      case 'stop': { sq.form='line'; reslot(sq); sq.cx=sq.mx; sq.cy=sq.my; sq.order={k:'hold'}; break; }
       case 'run': sq.run=!!o.v; break;
       case 'fire': sq.fire=!!o.v; break;
       case 'hold': sq.hf=!!o.v; break;
@@ -338,6 +344,7 @@ function createSim(bal,opts,players,armies,seed){
   /* марш строем: отряд идёт по найденному пути единым блоком */
   function marchStep(sq,dt){
     const o=sq.order, was=sq.mar; sq.mar=false; if(sq.routed||sq.nAlive<=0)return;
+    if(o.k!=='attack'&&sq.form==='wedge')sq.form='line';
     let gx,gy,faceFin=sq.face,holdHere=false;
     if(o.k==='move'){ gx=sq.cx; gy=sq.cy; }
     else if(o.k==='attack'){
@@ -345,7 +352,7 @@ function createSim(bal,opts,players,armies,seed){
       if(isVisible(sq.team,t)){ sq.tgx=t.mx; sq.tgy=t.my; sq.tgSeen=true; } if(!sq.tgSeen)return;
       const tx=sq.tgx, ty=sq.tgy, dd=Math.hypot(tx-sq.mx,ty-sq.my)||1, edge=dd-t.rad-sq.rad*0.5, clear=nav.los(sq.mx,sq.my,tx,ty);
       faceFin=Math.atan2(ty-sq.my,tx-sq.mx);
-      if(!sq.hf){ if((sq.ranged?edge<sq.reach*0.85:edge<20)&&clear){ sq.pg=null; return; } }
+      if(!sq.hf){ if((sq.ranged?edge<sq.reach*0.85:edge<20)&&clear){ sq.pg=null; sq.cx=sq.mx; sq.cy=sq.my; sq.face+=clamp(angDiff(faceFin,sq.face),-0.1,0.1); if(sq.form==='wedge'&&edge<12)sq.form='line'; return; } }
       else if(sq.ranged&&edge<sq.reach*0.85&&clear)holdHere=true;
       let nx=tx,ny=ty; if(isVisible(sq.team,t)){ let nd=1e18; for(const e of t.soldiers){ if(!e.alive)continue; const q=(e.x-sq.mx)*(e.x-sq.mx)+(e.y-sq.my)*(e.y-sq.my); if(q<nd){nd=q;nx=e.x;ny=e.y;} } }
       const dn=Math.hypot(nx-sq.mx,ny-sq.my)||1; gx=nx-(nx-sq.mx)/dn*1.6; gy=ny-(ny-sq.my)/dn*1.6;
@@ -481,7 +488,7 @@ function createSim(bal,opts,players,armies,seed){
           const chaseOK=(!sq.mar&&!sq.hf&&(ord.k==='attack'||d<16))||(sq.hf&&d<5&&Math.hypot(tg.x-slx,tg.y-sly)<9);
           const tooClose=d<w.min-0.5;
           if(tooClose&&rangedFallbackMelee&&d>10){haveGoal=true;goalX=slx;goalY=sly;}
-          else if(chaseOK&&Math.hypot(tg.x-sq.cx,tg.y-sq.cy)<(ord.k==='attack'?9999:40)){
+          else if(chaseOK&&Math.hypot(tg.x-sq.cx,tg.y-sq.cy)<(ord.k==='attack'?9999:40)&&Math.hypot(s.x-sq.mx,s.y-sq.my)<12+3.2*Math.sqrt(sq.nAlive)){
             const ux=(tg.x-s.x)/d,uy=(tg.y-s.y)/d,stop=Math.max(0.5,Math.min(reach,w.max)*0.85);
             goalX=tg.x-ux*stop;goalY=tg.y-uy*stop;haveGoal=true;chase=true;faceTo=null;
           } else {goalX=slx;goalY=sly;haveGoal=true;}
@@ -538,6 +545,7 @@ function createSim(bal,opts,players,armies,seed){
         base*=s.sp/100;
       }else base*=U.speed/100;
       spd=base*tf*turnK*want;
+      if(!chase&&U.role!=='cav'&&dist2go>7&&(sq.mar||ord.k==='move'))spd*=1.3;
     }else{ if(U.role==='cav')s.sp=Math.max(100,s.sp-g.charge.decel*dt); }
     if(s.swamp&&U.role==='cav')s.sp=100;
     s.v=spd; s.moving=spd>0.1;
