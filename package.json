@@ -1,0 +1,10 @@
+{
+  "name": "total-collision-server",
+  "version": "0.5.0",
+  "private": true,
+  "description": "Сервер лобби и связи для Total Collision",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "ws": "^8.18.0" }
+}
