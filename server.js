@@ -36,6 +36,9 @@ wss.on('connection',ws=>{
         if(r.guests.size>=MAX_GUESTS){sendT(ws,{t:'nojoin',e:'full'});return ws.close();}
         ws.role='guest'; ws.room=r; ws.gid=++r.seq; r.guests.set(ws.gid,ws); sendT(ws,{t:'joined'});
         sendT(r.host,{join:ws.gid});
+      }else if(m.t==='list'){
+        const list=[]; for(const r of rooms.values()){ const i=r.info; if(i&&i.open&&!i.inGame&&r.host.readyState===1)list.push({code:r.code,name:String(i.name||'').slice(0,24),mode:String(i.mode||'').slice(0,8),n:i.n|0,max:i.max|0,size:i.size|0,ver:String(i.ver||'').slice(0,12)}); }
+        sendT(ws,{t:'rooms',list:list.slice(0,50)}); setTimeout(()=>{try{ws.close();}catch(e){}},300);
       }else ws.close();
       return;
     }
@@ -52,6 +55,7 @@ wss.on('connection',ws=>{
       }else{
         let m; try{m=JSON.parse(data.toString());}catch(e){return;}
         if(m.t==='ping')return;
+        if(m.t==='info'){ r.info={open:!!m.open,inGame:!!m.inGame,name:m.name,mode:m.mode,n:m.n,max:m.max,size:m.size,ver:m.ver}; return; }
         const s=JSON.stringify(m.m);
         if(m.to===0||m.to==null){ for(const g of r.guests.values())if(g.readyState===1)g.send(s); }
         else if(m.kick){ const g=r.guests.get(m.kick); if(g)g.close(); }
