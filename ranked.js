@@ -1,5 +1,6 @@
 /* Total Collision — рейтинговый бой 1 на 1: очередь, подтверждение, выбор армии, расчёт боя на сервере, рейтинг и история. */
 'use strict';
+const zlib=require('zlib');
 function req(local,alt){ try{ return require(local); }catch(e){ return require(alt); } }
 const PB=req('./core.js','../src/core.js'); PB.t=PB.t||(x=>x); req('./net.js','../src/net.js');
 const bal=req('./balance.json','../src/balance.json');
@@ -9,12 +10,12 @@ const ACCEPT_MS=+process.env.RANKED_ACCEPT_MS||15000, PICK_MS=+process.env.RANKE
 const MAX_ACTIVE=+process.env.RANKED_MAX||6;
 const GOPTS={mapSize:1000,fog:!!G.fog,morale:G.morale!==false,battleTime:G.battleTime,deployTime:G.deployTime,zonePct:G.zonePct,squadScale:G.squadScale,budgetPerSquad:G.budgetPerSquad,terrain:Object.assign({},G.terrain)};
 const OPTS_PUB={mode:'1v1',need:NEED,lim:LIM,ver:bal.version};
-let api=null; const queue=[]; const matches=new Map(); const userMatch=new Map(); let mseq=0;
+let api=null; const zcap=new Map(); const queue=[]; const matches=new Map(); const userMatch=new Map(); let mseq=0;
 const send=(uid,o)=>api.sendTo(uid,o);
 const urec=uid=>api.users[uid];
 
-function packFrame(m){ const h=Object.assign({},m); const b=Buffer.from(m.b instanceof ArrayBuffer?new Uint8Array(m.b):new Uint8Array(m.b.buffer,m.b.byteOffset,m.b.byteLength)); delete h.b;
-  const hb=Buffer.from(JSON.stringify(h)), out=Buffer.alloc(4+hb.length+b.length); out.writeUInt32BE(hb.length,0); hb.copy(out,4); b.copy(out,4+hb.length); return out; }
+function packFrame(m,z){ const h=Object.assign({},m); const b=Buffer.from(m.b instanceof ArrayBuffer?new Uint8Array(m.b):new Uint8Array(m.b.buffer,m.b.byteOffset,m.b.byteLength)); delete h.b;
+  const hb=Buffer.from(JSON.stringify(h)), out=Buffer.alloc(4+hb.length+b.length); out.writeUInt32BE(hb.length,0); hb.copy(out,4); b.copy(out,4+hb.length); return z?Buffer.concat([Buffer.alloc(4),zlib.deflateRawSync(out)]):out; }
 
 /* ---------- армии ---------- */
 function clean(c){ const out={}; let n=0; if(c&&typeof c==='object'){ for(const k of Object.keys(c)){ if(!CANON.includes(k))continue; let v=c[k]|0; if(v<=0)continue; v=Math.min(v,LIM,NEED-n); if(v<=0)break; out[k]=v; n+=v; } } return out; }
@@ -61,14 +62,14 @@ function startBattle(m){
   for(const p of m.ps)p.army=fill(p.counts); // пустые места добираются случайно, выбранное остаётся
   const sw=Math.random()<0.5; const order=sw?[m.ps[1],m.ps[0]]:m.ps; m.order=order; // order[i] — игрок с индексом i в бою
   const players=order.map((p,i)=>({name:urec(p.uid).nick,team:i})), armies=order.map(p=>toList(p.army)); const seed=1+Math.floor(Math.random()*1e9);
-  m.sim=PB.createSim(bal,GOPTS,players,armies,seed); m.sim.evbuf=[]; m.start={opts:GOPTS,players,armies,seed};
+  m.dst={}; m.z=m.ps.every(p=>zcap.get(p.uid)); m.sim=PB.createSim(bal,GOPTS,players,armies,seed); m.sim.evbuf=[]; m.start={opts:GOPTS,players,armies,seed};
   for(const p of m.ps)send(p.uid,{t:'rinit',opts:GOPTS,players,armies,seed,you:order.indexOf(p),opp:pinfo(m.ps.find(x=>x!==p).uid)});
   m.last=Date.now(); m.acc=0;
 }
 function idxOf(m,uid){ return m.order.findIndex(p=>p.uid===uid); }
 function broadcast(m){
   const sim=m.sim, cache={}; sim.snapAt=0;
-  m.order.forEach((p,i)=>{ const tm=sim.players[i].team; if(!cache[tm])cache[tm]=packFrame(PB.packSnap(sim,tm)); api.sendBin(p.uid,cache[tm]); }); sim.evbuf=[];
+  m.order.forEach((p,i)=>{ const tm=sim.players[i].team; if(!cache[tm])cache[tm]=packFrame(PB.packSnap(sim,tm,(m.dst||(m.dst={}))[tm]||(m.dst[tm]={})),m.z); api.sendBin(p.uid,cache[tm]); }); sim.evbuf=[];
 }
 function stepAll(){
   const now=Date.now();
@@ -135,7 +136,7 @@ function message(me,ws,m){
       if(!m.on){ leaveQueue(uid); send(uid,{t:'rqn',n:0,off:true}); return; }
       if(m.ver!==bal.version){ send(uid,{t:'rerr',e:'ver',v:bal.version}); return; }
       if(userMatch.has(uid)){ send(uid,{t:'rerr',e:'busy'}); return; }
-      joinQueue(uid); return; }
+      zcap.set(uid,!!m.z); joinQueue(uid); return; }
     case 'nin': nin(uid,m); return;
     case 'nout': nout(uid,m); return;
     case 'nbeg': nbeg(uid,m); return;
@@ -164,7 +165,7 @@ function attach(uid){ // вошёл или обновил страницу
   if(!m)return; const p=m.ps.find(x=>x.uid===uid);
   if(m.state==='accept'){ if(p.acc)send(uid,{t:'rwait'}); else send(uid,{t:'rfound',mid:m.id,ms:Math.max(500,m.until-Date.now())}); }
   else if(m.state==='pick')sendPick(m,p);
-  else if(m.state==='battle'){ const s=m.start; send(uid,{t:'rinit',opts:s.opts,players:s.players,armies:s.armies,seed:s.seed,you:idxOf(m,uid),opp:pinfo(m.ps.find(x=>x!==p).uid),resume:true}); }
+  else if(m.state==='battle'){ m.dst={}; const s=m.start; send(uid,{t:'rinit',opts:s.opts,players:s.players,armies:s.armies,seed:s.seed,you:idxOf(m,uid),opp:pinfo(m.ps.find(x=>x!==p).uid),resume:true}); }
 }
 function offline(uid){ nhostGone(uid); leaveQueue(uid); const m=matches.get(userMatch.get(uid)); if(m&&m.state==='accept')cancelAccept(m,uid); }
 function status(uid){ return userMatch.has(uid)?'match':inQueue(uid)?'queue':''; }

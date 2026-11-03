@@ -20,6 +20,8 @@ function genMap(S,g,seed){
   const m={size:S,seed,roads:[],rects:[],rocks:[],ridges:0,swamps:[],grass:[],bridges:[],rivers:[],fords:[]};
   const R=Math.max(g.pointRadiusMin,S*g.pointRadiusK);
   m.point={x:S/2,y:S/2,r:R};
+  // три точки: центральная и две фланговые (меньше), на линии фронта
+  { const rf=Math.max(12,R*0.78); m.points=[m.point,{x:S*0.2,y:S/2,r:rf},{x:S*0.8,y:S/2,r:rf}]; }
   const zoneH=S*g.zonePct/100; m.zoneH=zoneH;
   const k=S/1000, dens=T.density||1;
   let area=0; const maxArea=S*S*(1-(T.flatMin==null?0.4:T.flatMin));
@@ -27,7 +29,7 @@ function genMap(S,g,seed){
   const shp=(a2,a3,a5)=>[a2*(.5+r()),r()*TAU,a3*(.5+r()),r()*TAU,a5*(.5+r()),r()*TAU];
   const mirSh=s=>[s[0],s[1]+2*PI,s[2],s[3]+3*PI,s[4],s[5]+5*PI];
   function inNeutral(y,rad){return y-rad>=zoneH+2&&y+rad<=S-zoneH-2}
-  function farFromPoint(x,y,rad){return Math.hypot(x-S/2,y-S/2)>R*2.5+rad}
+  function farFromPoint(x,y,rad){return m.points.every(p=>Math.hypot(x-p.x,y-p.y)>p.r*2.5+rad)}
   // реки: извилистые, наклонные, две центрально-симметричные (по одной в каждой половине)
   const rhw=Math.max(3,0.006*S);
   const useRivers=T.rivers&&S>=750;
@@ -45,16 +47,25 @@ function genMap(S,g,seed){
     riverF.push(f0,fB);
     const nb=S>=1500?4:3;
     const bx=[];for(let i=0;i<nb;i++)bx.push(S*(0.12+0.76*(i+0.15+r()*0.7)/nb));
+    const shw=Math.max(12,bh*2.8), shAll=[]; // половина ширины мелководья
+    if(T.bridges&&T.shallows!==false){ const want=S>=1500?2:1; let tr=0;
+      while(shAll.length<want&&tr++<60){ const x=S*(0.1+0.8*r()); if(bx.every(b=>Math.abs(x-b)>bh+shw+S*0.035)&&bx.every(b=>Math.abs(S-x-b)>bh+shw+S*0.035)&&shAll.every(q=>Math.abs(x-q)>S*0.18&&Math.abs(S-x-q)>S*0.18))shAll.push(x); } }
     riverF.forEach((f,ri)=>{
       const rv={y:f(S/2),hw:rhw,f,ri}; m.rivers.push(rv);
       const xs=(ri===0?bx:bx.map(x=>S-x)).slice().sort((a,b)=>a-b);
       if(T.bridges){
         xs.forEach(x=>{const y=f(x);m.bridges.push({x,y,hw:bh,rhw,ri,ang:Math.atan2(f(x+2)-f(x-2),4)});});
-        const st=Math.max(5,rhw*1.2);
-        for(let x0=0;x0<S;x0+=st){ const x1=Math.min(S,x0+st), mx=(x0+x1)/2;
-          if(xs.some(bxx=>Math.abs(mx-bxx)<bh+st*0.3))continue;
-          const ya=f(x0), yb=f(x1), ang=Math.atan2(yb-ya,x1-x0);
-          m.rects.push(Object.assign(mkRect(mx,(ya+yb)/2,Math.hypot(x1-x0,yb-ya)/2+0.6,rhw,ang),{river:true})); }
+        // мелководье: участки, где реку можно перейти вброд без моста (замедление вдвое)
+        const shx=(ri===0?shAll:shAll.map(x=>S-x)).slice().sort((a,b)=>a-b);
+        shx.forEach(x=>{ m.fords.push({ri,f,hh:rhw,x0:x-shw,x1:x+shw,shallow:true}); });
+        // стенка реки идёт участками между проёмами; проём моста равен ширине настила, проём брода — ширине мелководья
+        const gaps=xs.map(x=>[x-bh,x+bh]).concat(shx.map(x=>[x-shw,x+shw])).sort((a,b)=>a[0]-b[0]);
+        const st=Math.max(5,rhw*1.2), cuts=[0]; gaps.forEach(g2=>{cuts.push(g2[0],g2[1]);}); cuts.push(S);
+        for(let ci=0;ci<cuts.length;ci+=2){ const a=Math.max(0,cuts[ci]), b=Math.min(S,cuts[ci+1]); if(b-a<0.5)continue;
+          const n=Math.max(1,Math.ceil((b-a)/st)), w=(b-a)/n;
+          for(let q=0;q<n;q++){ const x0=a+q*w, x1=x0+w, mx=(x0+x1)/2;
+            const ya=f(x0), yb=f(x1), ang=Math.atan2(yb-ya,x1-x0);
+            m.rects.push(Object.assign(mkRect(mx,(ya+yb)/2,Math.hypot(x1-x0,yb-ya)/2+0.6,rhw,ang),{river:true})); } }
       }else{
         m.fords.push({ri,f,hh:rhw});
       }
@@ -84,41 +95,70 @@ function genMap(S,g,seed){
   if(T.grass)tryPlace(cnt(5),()=>{const rad=(12+r()*20)*Math.max(0.7,k);const x=r()*S,y=r()*S/2;if(Math.hypot(x-S/2,y-S/2)<R+rad)return false;
     {const sh=shp(.26,.16,.1);m.grass.push({x,y,r:rad,sh},{x:S-x,y:S-y,r:rad,sh:mirSh(sh)});}return true});
   if(T.city){
-    m.city=true; m.plaza={x:S/2,y:S/2,hw:Math.max(avHW0(),R*2.2)};
-    // город: два широких проспекта через центр (там точка и площадь), вторичные улицы, кварталы из зданий разного размера
-    const ck=T.cityK||1, fill=T.cityFill==null?0.85:T.cityFill;
-    function avHW0(){return Math.max(13,0.016*S);}
-    const avHW=Math.max(13,0.016*S), stHW=Math.max(6.5,0.0075*S), alley=Math.max(4.5,0.005*S);
-    const cw=S*(0.13+0.03*r())*ck, rh=S*(0.12+0.03*r())*ck;
-    const ax=[{p:S/2,hw:avHW}], ay=[{p:S/2,hw:avHW}];
-    for(let j=1;S/2+j*cw<S+cw;j++){ax.push({p:S/2+j*cw,hw:stHW},{p:S/2-j*cw,hw:stHW});}
-    for(let i=1;S/2+i*rh<S+rh;i++){ay.push({p:S/2+i*rh,hw:stHW},{p:S/2-i*rh,hw:stHW});}
-    ax.sort((u,v)=>u.p-v.p); ay.sort((u,v)=>u.p-v.p);
-    for(const q of ax)if(q.p>=0&&q.p<=S)m.roads.push({x:q.p,y:S/2,hw:q.hw,hh:S/2});
-    for(const q of ay)if(q.p>=0&&q.p<=S)m.roads.push({x:S/2,y:q.p,hw:S/2,hh:q.hw});
-    const add=(x0,y0,x1,y1)=>{ const hw=(x1-x0)/2, hh=(y1-y0)/2, cx=(x0+x1)/2, cy=(y0+y1)/2, tone=(r()*3)|0;
-      m.rects.push(Object.assign(mkRect(cx,cy,hw,hh,0),{house:true,tone}),Object.assign(mkRect(S-cx,S-cy,hw,hh,0),{house:true,tone})); area+=8*hw*hh; };
-    const split=(x0,y0,x1,y1,d)=>{
-      const w=x1-x0,h=y1-y0; if(w<8||h<8)return;
-      const small=w<28&&h<28;
-      const big=w>46||h>46;
-      if(!big&&(small||d>=3||r()<0.12+0.1*d)){ if(r()>fill)return;
-        const mx=(0.04+0.12*r())*w/2, my=(0.04+0.12*r())*h/2; const a0=x0+mx,a1=x1-mx,b0=y0+my,b1=y1-my; if(a1-a0<7||b1-b0<7)return; add(a0,b0,a1,b1); return; }
-      const t=0.38+0.24*r();
-      if(w>=h){ const c=x0+w*t; split(x0,y0,c-alley/2,y1,d+1); split(c+alley/2,y0,x1,y1,d+1); }
-      else{ const c=y0+h*t; split(x0,y0,x1,c-alley/2,d+1); split(x0,c+alley/2,x1,y1,d+1); }
-    };
-    for(let j=0;j<ax.length-1;j++)for(let i=0;i<ay.length-1;i++){
-      let x0=ax[j].p+ax[j].hw+2, x1=ax[j+1].p-ax[j+1].hw-2, y0=ay[i].p+ay[i].hw+2, y1=ay[i+1].p-ay[i+1].hw-2;
-      if((y0+y1)/2>=S/2)continue; if(x0<2)x0=2; if(x1>S-2)x1=S-2;
-      const yc2=(y0+y1)/2;
-      if(yc2<zoneH){ if(yc2>zoneH*0.5)continue; y0=Math.max(y0,3); y1=Math.min(y1,zoneH*0.27); } // тыловая полоса зоны расстановки: застройка только у самого края
-      else{ y0=Math.max(y0,zoneH+stHW+4); y1=Math.min(y1,S-zoneH-stHW-4); }
-      if(x1-x0<14||y1-y0<14)continue;
-      const dxp=Math.max(x0-S/2,0,S/2-x1), dyp=Math.max(y0-S/2,0,S/2-y1); if(Math.hypot(dxp,dyp)<R*2.3)continue;
-      if(r()<0.18)continue; // площадь или пустырь
-      split(x0,y0,x1,y1,0);
+    /* Город (по мотивам Химмельсдорфа/Руинберга): центральная площадь с точкой, два боковых сквера на фланговых точках,
+       три широких проспекта (ленты), крупные кварталы с проходами ≥ 24 м, руины, ворота и обломки городской стены. Всё центрально-симметрично. */
+    m.city=true; const kk=Math.max(0.85,Math.sqrt(k)), ck=T.cityK||1, fill=T.cityFill==null?0.85:T.cityFill, ruinK=T.ruinK==null?0.15:T.ruinK;
+    const pf=Math.max(12,R*0.78);
+    m.plazas=[{x:S/2,y:S/2,hw:Math.max(24*k,R*1.9)},{x:S*0.2,y:S/2,hw:Math.max(17*k,pf*1.9)},{x:S*0.8,y:S/2,hw:Math.max(17*k,pf*1.9)}];
+    m.plaza=m.plazas[0];
+    const avW=Math.max(18,0.02*S), flW=Math.max(15,0.016*S), crW=Math.max(12,0.0135*S);
+    const ax=[{p:S*0.2,hw:flW},{p:S*0.5,hw:avW},{p:S*0.8,hw:flW}], ayP=[S/2], ay=ayP.map(p=>({p,hw:crW*1.15}));
+    for(const q of ax)m.roads.push({x:q.p,y:S/2,hw:q.hw,hh:S/2});
+    for(const q of ay)m.roads.push({x:S/2,y:q.p,hw:S/2,hh:q.hw});
+    const inPlaza=(x0,y0,x1,y1,pad)=>m.plazas.some(pl=>x1>pl.x-pl.hw-pad&&x0<pl.x+pl.hw+pad&&y1>pl.y-pl.hw-pad&&y0<pl.y+pl.hw+pad);
+    const onRoadX=(x0,x1,pad)=>ax.some(q=>x1>q.p-q.hw-pad&&x0<q.p+q.hw+pad);
+    // пары (поворот на 180°): здание/стена и симметричный двойник
+    const pair=(cx,cy,hw,hh,extra)=>{ m.rects.push(Object.assign(mkRect(cx,cy,hw,hh,0),extra),Object.assign(mkRect(S-cx,S-cy,hw,hh,0),extra)); area+=8*hw*hh; };
+    const clipPlaza=(x0,y0,x1,y1)=>{ for(const pl of m.plazas){ const px0=pl.x-pl.hw-10,px1=pl.x+pl.hw+10,py0=pl.y-pl.hw-10,py1=pl.y+pl.hw+10;
+        if(x1>px0&&x0<px1&&y1>py0&&y0<py1){ const opts=[[x0,y0,Math.min(x1,px0),y1],[Math.max(x0,px1),y0,x1,y1],[x0,y0,x1,Math.min(y1,py0)],[x0,Math.max(y0,py1),x1,y1]];
+          let bst=null,ba=0; for(const o of opts){ const a2=Math.max(0,o[2]-o[0])*Math.max(0,o[3]-o[1]); if(a2>ba){ba=a2;bst=o;} } if(!bst)return null; [x0,y0,x1,y1]=bst; } }
+      return [x0,y0,x1,y1]; };
+    const house=(x0,y0,x1,y1)=>{ const c=clipPlaza(x0,y0,x1,y1); if(!c)return; [x0,y0,x1,y1]=c; if(x1-x0<16||y1-y0<16)return; if(onRoadX(x0,x1,5))return; pair((x0+x1)/2,(y0+y1)/2,(x1-x0)/2,(y1-y0)/2,{house:true,tone:(r()*3)|0}); };
+    const wallSeg=(x0,y0,x1,y1)=>{ const hw=(x1-x0)/2,hh=(y1-y0)/2; if(hw<1||hh<1)return; if(inPlaza(x0,y0,x1,y1,4))return; if(onRoadX(x0,x1,2)&&hw>hh)return; pair((x0+x1)/2,(y0+y1)/2,hw,hh,{ruin:true}); };
+    // остов разрушенного здания: обломки стен по периметру с проёмами
+    const ruin=(x0,y0,x1,y1)=>{ const T2=1.6*kk, w=x1-x0, h=y1-y0; if(w<22||h<22)return;
+      const sides=[[x0,y0,x1,y0+T2*2],[x0,y1-T2*2,x1,y1],[x0,y0,x0+T2*2,y1],[x1-T2*2,y0,x1,y1]];
+      sides.forEach((sd,si)=>{ if(r()<0.2)return; const horiz=si<2, L=horiz?w:h, len=L*(0.4+0.45*r()), off=(L-len)*r();
+        if(horiz)wallSeg(x0+off,sd[1],x0+off+len,sd[3]); else wallSeg(sd[0],y0+off,sd[2],y0+off+len); });
+      if(r()<0.5){ const cx=x0+w*(0.3+0.4*r()), cy=y0+h*(0.3+0.4*r()); house(cx-4*kk,cy-4*kk,cx+4*kk,cy+4*kk); } }
+    // кварталы: между проспектами по X; в северной половине между воротами и поперечной улицей (юг — зеркало)
+    const colB=[[6,ax[0].p-ax[0].hw],[ax[0].p+ax[0].hw,ax[1].p-ax[1].hw],[ax[1].p+ax[1].hw,ax[2].p-ax[2].hw],[ax[2].p+ax[2].hw,S-6]];
+    const yTop=zoneH+14+36*kk; // от ворот
+    const rowB=[[yTop,S/2-ay[0].hw]];
+    const gapX=23*kk, gapY=22*kk, mg=6;
+    // двор: ограда по периметру с воротами и строения внутри
+    const yard=(x0,y0,x1,y1)=>{ const T2=1.1*kk, w=x1-x0, h=y1-y0; if(w<44||h<44){ house(x0+w*0.15,y0+h*0.15,x1-w*0.15,y1-h*0.15); return; }
+      const gate=[(r()*4)|0,(r()*4)|0], gl=(14+6*r())*kk;
+      const side=(si,a0,a1,fixed,horiz)=>{ const L=a1-a0, gp=gate.includes(si)?a0+L*(0.25+0.5*r()):-1;
+        const seg=(u0,u1)=>{ if(u1-u0<2)return; if(horiz)wallSeg(u0,fixed-T2,u1,fixed+T2); else wallSeg(fixed-T2,u0,fixed+T2,u1); };
+        if(gp<0)seg(a0,a1); else { seg(a0,gp-gl/2); seg(gp+gl/2,a1); } };
+      side(0,x0,x1,y0,true); side(1,x0,x1,y1,true); side(2,y0,y1,x0,false); side(3,y0,y1,x1,false);
+      const nIn=1+((r()*2)|0); for(let q=0;q<nIn;q++){ const bw=Math.min(w-18*kk,(22+r()*20)*kk), bh=Math.min(h-18*kk,(18+r()*18)*kk); const bx=x0+9*kk+(w-18*kk-bw)*r(), by=y0+9*kk+(h-18*kk-bh)*r(); house(bx,by,bx+bw,by+bh); } };
+    const cell=(x0,y0,x1,y1)=>{ const w=x1-x0,h=y1-y0; if(w<24||h<24)return; const t=r();
+      if(t<0.62){ const bw=w*(0.86+0.14*r()), bh=h*(0.86+0.14*r()), bx=x0+(w-bw)*r(), by=y0+(h-bh)*r(); house(bx,by,bx+bw,by+bh);
+        if(bw>56*kk&&r()<0.4){ const aw=bw*(0.28+0.2*r()), ax0=bx+bw*0.12+(bw*0.5)*r(); house(ax0,by+bh,Math.min(x1,ax0+aw),Math.min(y1,by+bh+(12+10*r())*kk)); } }
+      else if(t<0.9){ const nxk=w>74*kk?2:1, nyk=h>74*kk?2:1, gx=(13+5*r())*kk, gy=(13+5*r())*kk, cw=(w-gx*(nxk-1))/nxk, ch=(h-gy*(nyk-1))/nyk;
+        for(let a=0;a<nxk;a++)for(let b=0;b<nyk;b++){ if(r()<0.16)continue; const bw=cw*(0.8+0.2*r()), bh=ch*(0.8+0.2*r()), bx=x0+a*(cw+gx)+(cw-bw)*r(), by=y0+b*(ch+gy)+(ch-bh)*r(); house(bx,by,bx+bw,by+bh); } }
+      else yard(x0,y0,x1,y1); };
+    for(const [cx0,cx1] of colB)for(const [ry0,ry1] of rowB){
+      const x0=cx0+mg, x1=cx1-mg, y0=ry0+mg, y1=ry1-mg; if(x1-x0<26||y1-y0<26)continue;
+      const roll=r();
+      if(roll<0.1/ck){ yard(x0+(x1-x0)*0.25,y0,x1-(x1-x0)*0.25,y1); continue; } // сквер
+      const ruined=roll<0.1/ck+ruinK;
+      const nx=(x1-x0)>170*kk?2:1, ny=(y1-y0)>112*kk?2:1;
+      const cw=((x1-x0)-gapX*(nx-1))/nx, ch=((y1-y0)-gapY*(ny-1))/ny;
+      for(let a=0;a<nx;a++)for(let b=0;b<ny;b++){ const bx0=x0+a*(cw+gapX), by0=y0+b*(ch+gapY);
+        if(!ruined&&r()>fill)continue;
+        if(ruined&&r()<0.75)ruin(bx0,by0,bx0+cw*(0.7+0.3*r()),by0+ch*(0.7+0.3*r())); else cell(bx0,by0,bx0+cw,by0+ch); }
     }
+    // ворота: по паре сторожевых зданий у входа в каждый проспект, между ними — куски городской стены с проломами
+    const gy0=zoneH+6, gh=34*kk;
+    const gates=ax.map(q=>q.p); const gw=ax.map(q=>q.hw+10);
+    gates.forEach((gx,i)=>{ const L=gw[i]; house(gx-L-30*kk,gy0,gx-L,gy0+gh); house(gx+L,gy0,gx+L+30*kk,gy0+gh); });
+    { const wy=gy0+gh*0.5, wt=1.5*kk; let edges=[0]; gates.forEach((gx,i)=>{ edges.push(gx-gw[i]-30*kk,gx+gw[i]+30*kk); }); edges.push(S);
+      for(let e=0;e<edges.length;e+=2){ const a=edges[e], b=edges[e+1]; if(b-a<12)continue; const len=b-a;
+        if(len>150*kk&&r()<0.85){ const br=(34+10*r())*kk, bp=a+len*(0.3+0.4*r()); wallSeg(a,wy-wt,bp-br/2,wy+wt); wallSeg(bp+br/2,wy-wt,b,wy+wt); }
+        else wallSeg(a,wy-wt,b,wy+wt); } }
   }
   m.flatPct=Math.round(100*(1-Math.min(1,area/(S*S))));
   return m;
@@ -141,7 +181,7 @@ function createSim(bal,opts,players,armies,seed){
   const S=g.mapSize||1000;
   const map=genMap(S,g,g.mapSeed||seed||1);
   const sim={g,units,map,S,players:[],squads:[],sol:[],t:0,tick:0,phase:'deploy',phaseT:g.deployTime,events:[],pend:[],fires:[],winner:null,reason:'',fog:!!g.fog,
-    pt:{owner:-1,prog:0,ctrlT:0,ctrlTeam:-1,inside:[0,0]},rand:rng((seed||1)*31+7),over:false};
+    pt:{pts:map.points.map(()=>({owner:-1,ctrlT:0,ctrlTeam:-1,inside:[0,0]})),cap:[0,0],rate:[0,0],owned:[0,0],clean:[0,0]},rand:rng((seed||1)*31+7),over:false};
   const DT=0.05; sim.DT=DT;
   const fsp0=g.fileSpacing, rsp0=g.rankSpacing;
   // игроки и полосы расстановки
@@ -173,7 +213,7 @@ function createSim(bal,opts,players,armies,seed){
     const n=sq.nAlive, w=Math.max(1,Math.min(sq.width,n,maxW(sq,n)));
     let row,f,inRow;
     if(sq.form==='wedge'&&w>=3){ // клин: ряды 1,3,5… бойцов, дальше полные ряды
-      let r=0,rem=i,cnt=1; for(;;){ const c=Math.min(cnt,w,n-(i-rem)); if(rem<c){ inRow=c; f=rem; break; } rem-=c; r++; cnt=cnt<w?cnt+2:w; }
+      let r=0,rem=Math.min(i,Math.max(0,n-1)),cnt=1; const i0=rem; for(let guard=0;guard<400;guard++){ const c=Math.max(1,Math.min(cnt,w,n-(i0-rem))); if(rem<c){ inRow=c; f=rem; break; } rem-=c; r++; cnt=cnt<w?cnt+2:w; } if(inRow==null){ inRow=1; f=0; }
       row=r;
     } else { row=(i/w)|0; f=i%w; inRow=Math.min(w,n-row*w); }
     const fc=sq.mar?sq.wf:sq.face, bx=sq.mar?sq.wx:sq.cx, by=sq.mar?sq.wy:sq.cy;
@@ -306,7 +346,7 @@ function createSim(bal,opts,players,armies,seed){
     for(let i=0;i<n;i++){ blk[i]=1; blk[(n-1)*n+i]=1; blk[i*n]=1; blk[i*n+n-1]=1; }
     for(const q of map.swamps){ const R=q.r*1.45+cs, x0=ci(q.x-R),x1=ci(q.x+R),y0=ci(q.y-R),y1=ci(q.y+R);
       for(let j=y0;j<=y1;j++)for(let i=x0;i<=x1;i++){ if(inBlob(q,(i+.5)*cs,(j+.5)*cs))cost[j*n+i]=1.8; } }
-    for(const f of map.fords){ for(let i=0;i<n;i++){ const x=(i+.5)*cs, fy=f.f(x), y0=ci(fy-f.hh-cs), y1=ci(fy+f.hh+cs); for(let j=y0;j<=y1;j++){ if(Math.abs((j+.5)*cs-fy)<f.hh+cs*.5)cost[j*n+i]=Math.max(cost[j*n+i],2); } } }
+    for(const f of map.fords){ for(let i=0;i<n;i++){ const x=(i+.5)*cs; if(f.x0!=null&&(x<f.x0||x>f.x1))continue; const fy=f.f(x), y0=ci(fy-f.hh-cs), y1=ci(fy+f.hh+cs); for(let j=y0;j<=y1;j++){ if(Math.abs((j+.5)*cs-fy)<f.hh+cs*.5)cost[j*n+i]=Math.max(cost[j*n+i],2); } } }
     const INF=1e9; for(let i=0;i<N;i++)clr[i]=blk[i]?0:INF; const dg=cs*1.414;
     for(let j=0;j<n;j++)for(let i=0;i<n;i++){ const k=j*n+i; let v=clr[k]; if(!v)continue; if(i>0)v=Math.min(v,clr[k-1]+cs); if(j>0){ v=Math.min(v,clr[k-n]+cs); if(i>0)v=Math.min(v,clr[k-n-1]+dg); if(i<n-1)v=Math.min(v,clr[k-n+1]+dg); } clr[k]=v; }
     for(let j=n-1;j>=0;j--)for(let i=n-1;i>=0;i--){ const k=j*n+i; let v=clr[k]; if(!v)continue; if(i<n-1)v=Math.min(v,clr[k+1]+cs); if(j<n-1){ v=Math.min(v,clr[k+n]+cs); if(i<n-1)v=Math.min(v,clr[k+n+1]+dg); if(i>0)v=Math.min(v,clr[k+n-1]+dg); } clr[k]=v; }
@@ -352,7 +392,7 @@ function createSim(bal,opts,players,armies,seed){
       if(isVisible(sq.team,t)){ sq.tgx=t.mx; sq.tgy=t.my; sq.tgSeen=true; } if(!sq.tgSeen)return;
       const tx=sq.tgx, ty=sq.tgy, dd=Math.hypot(tx-sq.mx,ty-sq.my)||1, edge=dd-t.rad-sq.rad*0.5, clear=nav.los(sq.mx,sq.my,tx,ty);
       faceFin=Math.atan2(ty-sq.my,tx-sq.mx);
-      if(!sq.hf){ if((sq.ranged?edge<sq.reach*0.85:edge<20)&&clear){ sq.pg=null; sq.cx=sq.mx; sq.cy=sq.my; sq.face+=clamp(angDiff(faceFin,sq.face),-0.1,0.1); if(sq.form==='wedge'&&edge<12)sq.form='line'; return; } }
+      if(!sq.hf){ if((sq.ranged?edge<sq.reach*0.85:edge<20)&&clear){ sq.pg=null; { const w=Math.max(1,Math.min(sq.width,sq.nAlive,maxW(sq,sq.nAlive))), half=(Math.ceil(sq.nAlive/w)-1)*sq.rsp/2; sq.face+=clamp(angDiff(faceFin,sq.face),-0.1,0.1); sq.cx=sq.mx+Math.cos(sq.face)*half; sq.cy=sq.my+Math.sin(sq.face)*half; } if(sq.form==='wedge'&&edge<12)sq.form='line'; return; } }
       else if(sq.ranged&&edge<sq.reach*0.85&&clear)holdHere=true;
       let nx=tx,ny=ty; if(isVisible(sq.team,t)){ let nd=1e18; for(const e of t.soldiers){ if(!e.alive)continue; const q=(e.x-sq.mx)*(e.x-sq.mx)+(e.y-sq.my)*(e.y-sq.my); if(q<nd){nd=q;nx=e.x;ny=e.y;} } }
       const dn=Math.hypot(nx-sq.mx,ny-sq.my)||1; gx=nx-(nx-sq.mx)/dn*1.6; gy=ny-(ny-sq.my)/dn*1.6;
@@ -378,7 +418,7 @@ function createSim(bal,opts,players,armies,seed){
   function terrainFlags(s){
     let sw=false,hl=false,gr=false,sp=1;
     for(const q of map.swamps){ if(inBlob(q,s.x,s.y)){sw=true;sp=Math.min(sp,0.55);break;}}
-    for(const f of map.fords){ if(Math.abs(s.y-f.f(s.x))<f.hh){sw=true;sp=Math.min(sp,0.5);break;} }
+    for(const f of map.fords){ if((f.x0==null||(s.x>=f.x0&&s.x<=f.x1))&&Math.abs(s.y-f.f(s.x))<f.hh){sw=true;sp=Math.min(sp,0.5);break;} }
     for(const q of map.grass){ if(inBlob(q,s.x,s.y)){gr=true;break;}}
     s.swamp=sw;s.hill=false;s.grass=gr; return sp;
   }
@@ -400,17 +440,51 @@ function createSim(bal,opts,players,armies,seed){
   // видимость для ИИ/целей (туман)
   const vis=[new Uint8Array(sim.sol.length),new Uint8Array(sim.sol.length)];
   function isVisible(team,sq){ if(!sim.fog)return true; for(const s of sq.soldiers){ if(s.alive&&vis[team][s.id])return true; } return false; }
+  /* Видимость: грубая сетка VC м. Клетки вокруг каждого своего бойца помечаются «видимыми» целыми полосами
+     (каждая занятая клетка — один раз), вместо проверки каждый-с-каждым. Бойцы в траве видны только вблизи (точно). */
+  /* Преграды обзора: дома и стены (не речные ограждения) и валуны. Видимость по кругу дополнительно проверяется лучом от ближайших своих бойцов. */
+  const VG=20, VGN=Math.ceil(S/VG)+1, vgrid=new Array(VGN*VGN); let nOcc=0, vgStamp=0;
+  const occList=[]; for(const q of map.rects){ if(q.river)continue; q.rr=q.rr||Math.hypot(q.hw,q.hh); occList.push({k:0,q,x:q.x,y:q.y,rr:q.rr,st:0}); }
+  for(const q of map.rocks)occList.push({k:1,q,x:q.x,y:q.y,rr:q.r*0.9,st:0});
+  for(const o of occList){ const a0=Math.max(0,Math.floor((o.x-o.rr)/VG)),a1=Math.min(VGN-1,Math.floor((o.x+o.rr)/VG)),b0=Math.max(0,Math.floor((o.y-o.rr)/VG)),b1=Math.min(VGN-1,Math.floor((o.y+o.rr)/VG)); for(let j=b0;j<=b1;j++)for(let i=a0;i<=a1;i++)(vgrid[j*VGN+i]||(vgrid[j*VGN+i]=[])).push(o); nOcc++; }
+  function sightBlocked(x1,y1,x2,y2){
+    if(!nOcc)return false; vgStamp++; const d=Math.hypot(x2-x1,y2-y1), n=Math.max(1,Math.ceil(d/(VG*0.7)));
+    for(let i=0;i<=n;i++){ const t=i/n, cx=Math.min(VGN-1,Math.max(0,((x1+(x2-x1)*t)/VG)|0)), cy=Math.min(VGN-1,Math.max(0,((y1+(y2-y1)*t)/VG)|0)), c=vgrid[cy*VGN+cx]; if(!c)continue;
+      for(const o of c){ if(o.st===vgStamp)continue; o.st=vgStamp;
+        if(o.k===0){ if(segHitsRect(x1,y1,x2,y2,o.q))return true; }
+        else{ const dx=x2-x1,dy=y2-y1,l2=dx*dx+dy*dy||1; let u=((o.x-x1)*dx+(o.y-y1)*dy)/l2; u=u<0?0:u>1?1:u; const px=x1+dx*u-o.x,py=y1+dy*u-o.y; if(px*px+py*py<o.rr*o.rr)return true; } } }
+    return false; }
+  sim.sightBlocked=sightBlocked;
+  const vwX=[[],[]], vwY=[[],[]], vwUsed=new Int32Array(512);
+  function occludeVision(){
+    if(!nOcc)return; const R2=(g.sight+VC)*(g.sight+VC);
+    for(let o=0;o<2;o++){ const X=vwX[o], Y=vwY[o]; X.length=0; Y.length=0;
+      for(const sq of sim.squads){ if(sq.team!==o||sq.nAlive<=0)continue; const n=sq.soldiers.length, step=Math.max(1,Math.ceil(sq.nAlive/5)); let k=0; for(let i=0;i<n;i++){ const s=sq.soldiers[i]; if(!s.alive)continue; if(k++%step===0){ X.push(s.x); Y.push(s.y); } } }
+      const nv=X.length; if(!nv)continue; let stampV=0;
+      for(const e of sim.sol){ if(!e.alive||e.team===o||!vis[o][e.id]||e.grass)continue;
+        let clear=false, any=false; const used=[];
+        for(let at=0;at<4;at++){ let bi=-1,bd=R2; for(let i=0;i<nv;i++){ if(used.indexOf(i)>=0)continue; const dx=X[i]-e.x,dy=Y[i]-e.y,d2=dx*dx+dy*dy; if(d2<bd){bd=d2;bi=i;} }
+          if(bi<0)break; any=true; used.push(bi); if(bd<64||!sightBlocked(X[bi],Y[bi],e.x,e.y)){ clear=true; break; } }
+        if(any&&!clear)vis[o][e.id]=0; } }
+  }
+  const VC=6, VN=Math.ceil(S/VC)+2, seen=[new Uint8Array(VN*VN),new Uint8Array(VN*VN)], occ=[new Uint32Array(VN*VN),new Uint32Array(VN*VN)]; let vstamp=0, vspans=null;
   function computeVision(){
     if(!sim.fog){vis[0].fill(1);vis[1].fill(1);return;}
-    vis[0].fill(0);vis[1].fill(0);
-    const R=g.sight, rr=Math.ceil(R/CELL);
-    for(const s of sim.sol){ if(!s.alive)continue; const team=s.team, o=1-team;
-      const cx=(s.x/CELL)|0, cy=(s.y/CELL)|0; vis[team][s.id]=1;
-      for(let yy=Math.max(0,cy-rr);yy<=Math.min(GN-1,cy+rr);yy++)for(let xx=Math.max(0,cx-rr);xx<=Math.min(GN-1,cx+rr);xx++){
-        for(let i=head[xx+yy*GN];i!==-1;i=nxt[i]){const e=sim.sol[i]; if(e.team!==o||vis[team][i])continue; const dx=e.x-s.x,dy=e.y-s.y,d2=dx*dx+dy*dy;
-          const lim=e.grass?g.grassSight:R; if(d2<=lim*lim)vis[team][i]=1;}
-      }
-    }
+    vis[0].fill(0);vis[1].fill(0); seen[0].fill(0); seen[1].fill(0); vstamp++;
+    const R=g.sight+VC*0.5, rr=Math.ceil(R/VC);
+    if(!vspans){ vspans=new Int32Array(rr*2+1); for(let dy=-rr;dy<=rr;dy++){ const y=dy*VC; vspans[dy+rr]=y*y>R*R?-1:Math.floor(Math.sqrt(R*R-y*y)/VC); } }
+    for(const s of sim.sol){ if(!s.alive)continue; const t=s.team, cx=Math.min(VN-1,(s.x/VC)|0), cy=Math.min(VN-1,(s.y/VC)|0), ci=cx+cy*VN; if(cx<0||cy<0)continue;
+      if(occ[t][ci]===vstamp)continue; occ[t][ci]=vstamp; const sn=seen[t];
+      for(let dy=-rr;dy<=rr;dy++){ const hw=vspans[dy+rr], yy=cy+dy; if(hw<0||yy<0||yy>=VN)continue; const x0=Math.max(0,cx-hw), x1=Math.min(VN-1,cx+hw); sn.fill(1,yy*VN+x0,yy*VN+x1+1); } }
+    const gs=g.grassSight, gr2=gs*gs, grr=Math.ceil(gs/CELL);
+    for(const e of sim.sol){ if(!e.alive)continue; const t=e.team, o=1-t; vis[t][e.id]=1;
+      const ci=Math.min(VN-1,(e.x/VC)|0)+Math.min(VN-1,(e.y/VC)|0)*VN;
+      if(!e.grass){ if(seen[o][ci])vis[o][e.id]=1; continue; }
+      if(!seen[o][ci])continue; const cx=(e.x/CELL)|0, cy=(e.y/CELL)|0; let found=false;
+      for(let yy=Math.max(0,cy-grr);yy<=Math.min(GN-1,cy+grr)&&!found;yy++)for(let xx=Math.max(0,cx-grr);xx<=Math.min(GN-1,cx+grr)&&!found;xx++){
+        for(let i=head[xx+yy*GN];i!==-1;i=nxt[i]){const q=sim.sol[i]; if(q.team!==o)continue; const dx=q.x-e.x,dy=q.y-e.y; if(dx*dx+dy*dy<=gr2){found=true;break;}} }
+      if(found)vis[o][e.id]=1; }
+    occludeVision();
   }
   sim.vis=vis; sim.isVisible=isVisible;
 
@@ -625,12 +699,18 @@ function createSim(bal,opts,players,armies,seed){
           a.x-=nx*ov*k*wa; a.y-=ny*ov*k*wa; b.x+=nx*ov*k*wb; b.y+=ny*ov*k*wb;
         } } }
   }
+  /* препятствия: сетка 20 м — боец проверяется только с камнями и зданиями своей клетки */
+  const OG=20, ON=Math.ceil(S/OG)+1, ogR=new Array(ON*ON), ogK=new Array(ON*ON);
+  { const r0=g.soldierRadius; const reg=(grid,x,y,rad,it)=>{ const a0=Math.max(0,Math.floor((x-rad)/OG)),a1=Math.min(ON-1,Math.floor((x+rad)/OG)),b0=Math.max(0,Math.floor((y-rad)/OG)),b1=Math.min(ON-1,Math.floor((y+rad)/OG)); for(let j=b0;j<=b1;j++)for(let i=a0;i<=a1;i++){ (grid[j*ON+i]||(grid[j*ON+i]=[])).push(it); } };
+    for(const q of map.rects)reg(ogR,q.x,q.y,Math.hypot(q.hw,q.hh)+r0+2,q);
+    for(const q of map.rocks)reg(ogK,q.x,q.y,q.r*1.45+r0+2,q); }
   function obstacles(){
     const r=g.soldierRadius;
     for(const s of sim.sol){ if(!s.alive)continue;
-      for(const q of map.rocks){const dx=s.x-q.x,dy=s.y-q.y,d2=dx*dx+dy*dy; if(d2>(q.r*1.45+r)*(q.r*1.45+r))continue; const lim=blobR(q,Math.atan2(dy,dx))+r; if(d2<lim*lim){const d=Math.sqrt(d2)||0.01; s.x=q.x+dx/d*lim; s.y=q.y+dy/d*lim;}}
-      for(const q of map.rects){
-        const dx=s.x-q.x,dy=s.y-q.y; if(Math.abs(dx)>q.hw+q.hh+3&&Math.abs(dy)>q.hw+q.hh+3)continue;
+      const oi=Math.min(ON-1,Math.max(0,(s.x/OG)|0))+Math.min(ON-1,Math.max(0,(s.y/OG)|0))*ON, ck=ogK[oi], cr=ogR[oi];
+      if(ck)for(const q of ck){const dx=s.x-q.x,dy=s.y-q.y,d2=dx*dx+dy*dy; if(d2>(q.r*1.45+r)*(q.r*1.45+r))continue; const lim=blobR(q,Math.atan2(dy,dx))+r; if(d2<lim*lim){const d=Math.sqrt(d2)||0.01; s.x=q.x+dx/d*lim; s.y=q.y+dy/d*lim;}}
+      if(cr)for(const q of cr){
+        const dx=s.x-q.x,dy=s.y-q.y;
         const lx=dx*q.c+dy*q.s, ly=-dx*q.s+dy*q.c, cxp=clamp(lx,-q.hw,q.hw), cyp=clamp(ly,-q.hh,q.hh), ddx=lx-cxp, ddy=ly-cyp, d2=ddx*ddx+ddy*ddy;
         if(d2<r*r){ let px,py;
           if(d2>1e-6){const d=Math.sqrt(d2);px=cxp+ddx/d*r;py=cyp+ddy/d*r;}
@@ -641,17 +721,35 @@ function createSim(bal,opts,players,armies,seed){
     }
   }
 
+  // Захват: точка переходит к тому, кто стоит на ней один g.pointCtrlTime секунд.
+  // Шкала победы растёт, пока у команды две чистые точки (своя, с её бойцами и без врага) — ×1, три — ×2.
+  // Враг на своей точке при <2 чистых — шкала падает с той же скоростью. Две точки у врага — шкала сбрасывается.
+  // Потеря одной из трёх точек: −25 пунктов.
   function updatePoint(dt){
-    const p=map.point, pt=sim.pt, c=[0,0], rr=p.r*p.r;
-    for(const s of sim.sol){ if(!s.alive||s.sq.routed)continue; const dx=s.x-p.x,dy=s.y-p.y; if(dx*dx+dy*dy<=rr)c[s.team]++; }
-    pt.inside=c;
-    if(c[0]&&c[1]){ pt.ctrlT=0; pt.ctrlTeam=-1; if(pt.owner>=0)pt.prog=0; return; }
-    const only=c[0]?0:c[1]?1:-1;
-    if(only<0){pt.ctrlT=0;pt.ctrlTeam=-1;return;}
-    if(pt.owner===only){ pt.prog=Math.min(100,pt.prog+dt*100/g.pointCaptureTime); pt.ctrlT=0; pt.ctrlTeam=-1; if(pt.prog>=100)finish(only,'capture'); }
-    else{
-      if(pt.ctrlTeam!==only){pt.ctrlTeam=only;pt.ctrlT=0;}
-      pt.ctrlT+=dt; if(pt.ctrlT>=g.pointCtrlTime){pt.owner=only;pt.prog=0;pt.ctrlT=0;pt.ctrlTeam=-1;sim.events.push({e:'c',team:only});}
+    const pts=map.points, pt=sim.pt, n=pts.length, Q=pt.pts;
+    for(let i=0;i<n;i++){ Q[i].inside[0]=0; Q[i].inside[1]=0; }
+    for(const s of sim.sol){ if(!s.alive||s.sq.routed)continue;
+      for(let i=0;i<n;i++){ const p=pts[i], dx=s.x-p.x; if(dx>p.r||dx<-p.r)continue; const dy=s.y-p.y; if(dx*dx+dy*dy<=p.r*p.r){ Q[i].inside[s.team]++; break; } } }
+    const owned=[0,0]; for(const q of Q)if(q.owner>=0)owned[q.owner]++;
+    for(let i=0;i<n;i++){ const q=Q[i], c=q.inside;
+      if(c[0]&&c[1]){ q.ctrlT=0; q.ctrlTeam=-1; continue; }
+      const only=c[0]?0:c[1]?1:-1;
+      if(only<0||q.owner===only){ q.ctrlT=0; q.ctrlTeam=-1; continue; }
+      if(q.ctrlTeam!==only){ q.ctrlTeam=only; q.ctrlT=0; }
+      q.ctrlT+=dt;
+      if(q.ctrlT>=g.pointCtrlTime){ const old=q.owner; if(old>=0){ if(owned[old]>=3)pt.cap[old]=Math.max(0,pt.cap[old]-25); owned[old]--; } q.owner=only; owned[only]++; q.ctrlT=0; q.ctrlTeam=-1; sim.events.push({e:'c',team:only,i}); }
+    }
+    const clean=[0,0], hit=[false,false];
+    for(const q of Q){ if(q.owner<0)continue; const t=q.owner, e=1-t; if(q.inside[t]>0&&q.inside[e]===0)clean[t]++; if(q.inside[e]>0)hit[t]=true; }
+    pt.owned=owned; pt.clean=clean;
+    for(let t=0;t<2;t++){
+      if(owned[1-t]>=2){ pt.cap[t]=0; pt.rate[t]=0; continue; }
+      let r=0; if(clean[t]>=3)r=2; else if(clean[t]>=2)r=1;
+      const k=100/g.pointCaptureTime;
+      if(r>0){ pt.cap[t]=Math.min(100,pt.cap[t]+dt*k*r); pt.rate[t]=r; }
+      else if(hit[t]&&pt.cap[t]>0){ pt.cap[t]=Math.max(0,pt.cap[t]-dt*k); pt.rate[t]=-1; }
+      else pt.rate[t]=0;
+      if(pt.cap[t]>=100)finish(t,'capture');
     }
   }
   function finish(team,reason){ if(sim.over)return; sim.over=true; sim.phase='over'; sim.winner=team; sim.reason=reason; }
@@ -687,7 +785,7 @@ function createSim(bal,opts,players,armies,seed){
     const alive=[0,0]; for(const sq of sim.squads)alive[sq.team]+=sq.nAlive;
     if(!sim.over){
       if(alive[0]===0&&alive[1]===0)finish(-1,'mutual'); else if(alive[0]===0)finish(1,'annihilation'); else if(alive[1]===0)finish(0,'annihilation');
-      else if(sim.phaseT<=0){ if(sim.pt.owner>=0)finish(sim.pt.owner,'timer'); else finish(-1,'draw'); }
+      else if(sim.phaseT<=0){ const o=sim.pt.owned,cp=sim.pt.cap; if(o[0]!==o[1])finish(o[0]>o[1]?0:1,'timer'); else if(Math.abs(cp[0]-cp[1])>0.5)finish(cp[0]>cp[1]?0:1,'timer'); else finish(-1,'draw'); }
     }
     if(sim.events.length>400)sim.events.splice(0,sim.events.length-400);
   };

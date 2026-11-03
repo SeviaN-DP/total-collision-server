@@ -80,7 +80,16 @@ function packMsg(m,to){ // -> строка (текст) или Uint8Array (би�
   }
   return null;
 }
-function unpackBin(buf){ const u=new Uint8Array(buf), dv=new DataView(u.buffer,u.byteOffset,u.byteLength), hl=dv.getUint32(0); const m=JSON.parse(dec.decode(u.subarray(4,4+hl))); m.b=u.subarray(4+hl); return m; }
+/* сжатие кадров боя: кадр [u32 0][deflate-raw(обычный кадр)]; дельта-кодирование снимков делает packSnap/applySnap */
+async function zdeflate(u8){ if(typeof CompressionStream==='undefined')return null; const cs=new CompressionStream('deflate-raw'), w=cs.writable.getWriter(); w.write(u8); w.close(); return new Uint8Array(await new Response(cs.readable).arrayBuffer()); }
+async function zinflate(u8){ const ds=new DecompressionStream('deflate-raw'), w=ds.writable.getWriter(); w.write(u8); w.close(); return new Uint8Array(await new Response(ds.readable).arrayBuffer()); }
+async function zipMsg(m){ const raw=packMsg(m,null); if(!raw)return null; const z=await zdeflate(raw); if(!z)return null; const out=new Uint8Array(4+z.length); out.set(z,4); return out; }
+let zChain=Promise.resolve(), zPend=0;
+PB.zok=typeof DecompressionStream!=='undefined'&&typeof CompressionStream!=='undefined'&&typeof Response!=='undefined';
+function inbound(data,cb){ let m; try{ m=typeof data==='string'?JSON.parse(data):unpackBin(data); }catch(e){return;}
+  if(m.zz){ zPend++; zChain=zChain.then(async()=>{ try{ const raw=await zinflate(m.zz); cb(unpackBin(raw.buffer.slice(raw.byteOffset,raw.byteOffset+raw.byteLength))); }catch(e){} zPend--; }); }
+  else if(zPend>0){ zChain=zChain.then(()=>{ try{cb(m);}catch(e){} }); } else cb(m); }
+function unpackBin(buf){ const u0=new Uint8Array(buf); if(u0.length>=4&&u0[0]===0&&u0[1]===0&&u0[2]===0&&u0[3]===0)return {zz:u0.subarray(4)}; const u=u0, dv=new DataView(u.buffer,u.byteOffset,u.byteLength), hl=dv.getUint32(0); const m=JSON.parse(dec.decode(u.subarray(4,4+hl))); m.b=u.subarray(4+hl); return m; }
 function openWS(url,wake){
   return new Promise((res,rej)=>{ let ws; try{ws=new WebSocket(url);}catch(e){return rej(new Error(T('Неверный адрес сервера.')));} ws.binaryType='arraybuffer';
     const to=setTimeout(()=>{try{ws.close();}catch(e){} rej(new Error(T('Сервер не отвечает. Если он только что был в простое, подождите минуту и повторите.')));},wake||60000);
@@ -108,6 +117,7 @@ WsHost.prototype.start=async function(resumeCode,pw){
   return this.code;
 };
 WsHost.prototype.sendTo=function(id,m){ const ws=this.ws; if(!ws||ws.readyState!==1)return; const bin=packMsg(m,id); try{ if(bin)ws.send(bin); else ws.send(JSON.stringify({to:id,m})); }catch(e){} };
+WsHost.prototype.sendRaw=function(id,u8){ const ws=this.ws; if(!ws||ws.readyState!==1||!this.conns.has(id))return; const out=new Uint8Array(4+u8.length); new DataView(out.buffer).setUint32(0,id); out.set(u8,4); try{ws.send(out);}catch(e){} };
 WsHost.prototype.send=function(id,m){ if(this.conns.has(id))this.sendTo(id,m); };
 WsHost.prototype.all=function(m){ const ws=this.ws; if(!ws||ws.readyState!==1)return; const bin=packMsg(m,0); try{ if(bin)ws.send(bin); else ws.send(JSON.stringify({to:0,m})); }catch(e){} };
 WsHost.prototype.setInfo=function(info){ this.info=info; try{ this.ws&&this.ws.readyState===1&&this.ws.send(JSON.stringify(Object.assign({t:'info'},info))); }catch(e){} };
@@ -120,7 +130,7 @@ WsGuest.prototype.connect=async function(code,hello,pw){
   ws.send(JSON.stringify({t:'join',code,pw:pw||undefined}));
   const r=await waitMsg(ws,['joined','nojoin']).catch(e=>{try{ws.close();}catch(_){} throw e;});
   if(r.t!=='joined'){ try{ws.close();}catch(_){} const er=new Error(r.e==='full'?T('Лобби заполнено.'):r.e==='pw'||r.e==='badpw'?T('Нужен пароль лобби.'):r.e==='rate'?T('Слишком много неверных паролей. Подождите минуту.'):T('Лобби с таким кодом не найдено.')); er.needPw=r.e==='pw'||r.e==='badpw'; er.badPw=r.e==='badpw'; throw er; }
-  ws.onmessage=ev=>{ let m; try{ m=typeof ev.data==='string'?JSON.parse(ev.data):unpackBin(ev.data); }catch(e){return;} this.onMsg&&this.onMsg(m); };
+  ws.onmessage=ev=>inbound(ev.data,m=>{ this.onMsg&&this.onMsg(m); });
   ws.onclose=()=>{ clearInterval(this.hb); try{this.hw&&this.hw.terminate();}catch(e){} this.onClose&&this.onClose(); };
   this.send(hello);
   // пульс гостя идёт из отдельного потока: в фоновом окне обычные таймеры браузер замедляет, и хост решил бы, что гость отключился
@@ -134,7 +144,7 @@ function Host(){ return serverURL()?new WsHost():new PeerHost(); }
 function Guest(){ return serverURL()?new WsGuest():new PeerGuest(); }
 
 /* ---------- снимки ---------- */
-function packSnap(sim,team){
+function packSnap(sim,team,st){
   const n=sim.sol.length, buf=new ArrayBuffer(n*9), dv=new DataView(buf), vis=sim.vis[team], fog=sim.fog;
   for(let i=0;i<n;i++){ const s=sim.sol[i], o=i*9;
     const v=!fog||s.team===team||vis[i];
@@ -146,17 +156,32 @@ function packSnap(sim,team){
     dv.setUint8(o+7,s.gone?255:Math.min(250,Math.round(s.sp/2)));
     { const ag=sim.t-s.lastAtk; dv.setUint8(o+8,ag>=2.5?255:Math.max(0,Math.round(ag*100))); }
   }
+  let kf=1, wire=buf;
+  if(st){ const cur=new Uint8Array(buf); st.n=st.n||0; kf=(!st.prev||st.prev.length!==cur.length||st.n%30===0)?1:0; st.n++;
+    if(!kf){ const pd=new DataView(st.prev.buffer,st.prev.byteOffset,st.prev.byteLength), out=new ArrayBuffer(buf.byteLength), od=new DataView(out), ou=new Uint8Array(out);
+      for(let i=0;i<n;i++){ const o=i*9; od.setInt16(o,dv.getInt16(o)-pd.getInt16(o)); od.setInt16(o+2,dv.getInt16(o+2)-pd.getInt16(o+2)); for(let k=4;k<9;k++)ou[o+k]=cur[o+k]^st.prev[o+k]; } wire=out; }
+    st.prev=cur; }
   const q=[]; for(const sq of sim.squads){ if(sq.team!==team)continue; const k=sq.order.k; q.push([sq.id,k==='move'?1:k==='attack'?2:0,+sq.cx.toFixed(1),+sq.cy.toFixed(1),+sq.face.toFixed(3),sq.width,sq.run?1:0,sq.fire?1:0,sq.order.target==null?-1:sq.order.target,Math.round(sq.mor),sq.routed?1:0,sq.hf?1:0]); }
   const ev=[]; for(const e of (sim.evbuf||[])){ if(e.e==='s'){ if(!fog||e.tm===team)ev.push([1,+e.x1.toFixed(1),+e.y1.toFixed(1),+e.x2.toFixed(1),+e.y2.toFixed(1),e.k]); }
     else if(e.e==='h'||e.e==='d'){ if(!fog||vis[e.id])ev.push([e.e==='h'?2:3,+e.x.toFixed(1),+e.y.toFixed(1),e.k||0]); }
     else if(e.e==='r'){ const rq=sim.squads[e.sq]; if(rq&&rq.team===team)ev.push([4,e.sq]); }
     else if(e.e==='f')ev.push([5,+e.x.toFixed(1),+e.y.toFixed(1),e.r,e.dur]);
     else if(e.e==='i')ev.push([6,+e.x.toFixed(1),+e.y.toFixed(1),e.r]); }
-  return {t:'s',b:buf,tm:+sim.t.toFixed(2),ph:sim.phase,pT:+sim.phaseT.toFixed(1),pt:sim.pt,w:sim.winner,r:sim.reason,q,ev:ev.slice(-90),pl:sim.players.map(p=>[p.ready?1:0,p.gone?1:0])};
+  return {t:'s',kf,b:wire,tm:+sim.t.toFixed(2),ph:sim.phase,pT:+sim.phaseT.toFixed(1),pt:sim.pt,w:sim.winner,r:sim.reason,q,ev:ev.slice(-90),pl:sim.players.map(p=>[p.ready?1:0,p.gone?1:0])};
+}
+function undelta(sim,m){
+  const u=m.b instanceof ArrayBuffer?new Uint8Array(m.b):new Uint8Array(m.b.buffer,m.b.byteOffset,m.b.byteLength);
+  if(m.kf===0){ const base=sim.snapBase; if(!base||base.length!==u.length)return false; const bd=new DataView(base.buffer,base.byteOffset,base.byteLength), ud=new DataView(u.buffer,u.byteOffset,u.byteLength), n=u.length/9;
+    for(let i=0;i<n;i++){ const o=i*9; bd.setInt16(o,bd.getInt16(o)+ud.getInt16(o)); bd.setInt16(o+2,bd.getInt16(o+2)+ud.getInt16(o+2)); for(let k=4;k<9;k++)base[o+k]^=u[o+k]; } m.b=base; return true; }
+  sim.snapBase=new Uint8Array(u); m.b=sim.snapBase; return true;
 }
 function applySnap(sim,m,now){
+  if(!undelta(sim,m))return [];
   const dv=new DataView(m.b.buffer?m.b.buffer.slice(m.b.byteOffset,m.b.byteOffset+m.b.byteLength):m.b), n=sim.sol.length;
-  for(let i=0;i<n;i++){ const s=sim.sol[i], o=i*9; s.px=s.x; s.py=s.y; s.pface=s.face;
+  /* плавность: интервал между кадрами сглаживается, а новый отрезок начинается с того места, где боец показан сейчас (без «скачков» при неровной сети) */
+  const gap=sim.snapAt?now-sim.snapAt:0; if(gap>20&&gap<1500){ sim.snapEma=sim.snapEma?sim.snapEma*0.88+gap*0.12:gap; } sim.snapIv=Math.max(90,Math.min(260,(sim.snapEma||100)*1.1));
+  const A0=sim.snapAt?Math.max(0,Math.min(1.3,gap/(sim.snapIvPrev||sim.snapIv))):1; sim.snapIvPrev=sim.snapIv;
+  for(let i=0;i<n;i++){ const s=sim.sol[i], o=i*9; s.px=s.px+(s.x-s.px)*A0; s.py=s.py+(s.y-s.py)*A0; s.pface=s.face;
     const fl=dv.getUint8(o+6), v=dv.getUint8(o+7)!==0||(fl&1);
     if(!(fl&1)){ s.vis=false; continue; }
     s.vis=true; s.x=dv.getInt16(o)/16; s.y=dv.getInt16(o+2)/16; s.face=dv.getUint8(o+4)/255*TAU-PI;
@@ -166,11 +191,11 @@ function applySnap(sim,m,now){
     s.odo=(s.odo||0)+Math.hypot(s.x-s.px,s.y-s.py); { const a8=dv.getUint8(o+8); s.lastAtk=a8===255?-99:m.tm-a8/100; }
   }
   sim.t=m.tm; sim.phase=m.ph; sim.phaseT=m.pT; sim.pt=m.pt; sim.winner=m.w; sim.reason=m.r; sim.over=m.ph==='over';
-  for(const o of m.q){ const sq=sim.squads[o[0]]; if(!sq)continue; sq.order={k:o[1]===1?'move':o[1]===2?'attack':'hold',target:o[8]}; sq.cx=o[2];sq.cy=o[3];sq.face=o[4];sq.width=o[5];sq.run=!!o[6];sq.fire=!!o[7]; sq.mor=o[9]==null?100:o[9]; sq.routed=!!o[10]; sq.hf=!!o[11]; }
+  for(const o of m.q){ const sq=sim.squads[o[0]]; if(!sq)continue; if(sq.pend){ const p=sq.pend, ok=p.k==='move'?(o[1]===1&&Math.hypot(o[2]-p.x,o[3]-p.y)<2):p.k==='attack'?(o[1]===2&&o[8]===p.target):(o[1]===0); if(ok||now>p.until)sq.pend=null; else { sq.run=!!o[6];sq.fire=!!o[7]; sq.mor=o[9]==null?100:o[9]; sq.routed=!!o[10]; sq.hf=!!o[11]; continue; } } sq.order={k:o[1]===1?'move':o[1]===2?'attack':'hold',target:o[8]}; sq.cx=o[2];sq.cy=o[3];sq.face=o[4];sq.width=o[5];sq.run=!!o[6];sq.fire=!!o[7]; sq.mor=o[9]==null?100:o[9]; sq.routed=!!o[10]; sq.hf=!!o[11]; }
   m.pl.forEach((p,i)=>{ if(sim.players[i]){sim.players[i].ready=!!p[0];sim.players[i].gone=!!p[1];} });
   for(const sq of sim.squads){ let c=0,sx=0,sy=0; for(const s of sq.soldiers){ if(s.alive&&s.vis!==false){c++;sx+=s.x;sy+=s.y;} } let na=0; for(const s of sq.soldiers)if(s.alive)na++; sq.nAlive=na; sq.nVis=c; if(c){sq.mx=sx/c;sq.my=sy/c;} }
   sim.snapAt=now;
   return m.ev;
 }
-Object.assign(PB,{listRooms,Host,Guest,packSnap,applySnap,makeCode,loadPeer,unpackBin});
+Object.assign(PB,{listRooms,Host,Guest,packSnap,applySnap,makeCode,loadPeer,unpackBin,inbound,zipMsg});
 })(typeof window!=='undefined'?window:globalThis);

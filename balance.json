@@ -1,5 +1,5 @@
 {
- "version": "0.6.4",
+ "version": "0.6.6",
  "global": {
   "unitSpeed": 3,
   "soldierRadius": 0.45,
@@ -800,6 +800,63 @@
     "rockN": 1.5
    },
    "desc": "Большая горная карта: скалы, болота, трава и реки с бродами."
+  },
+  {
+   "id": "oldtown",
+   "name": "Старый город",
+   "size": 1000,
+   "seed": 72,
+   "terrain": {
+    "walls": false,
+    "swamps": false,
+    "rocks": false,
+    "rivers": false,
+    "bridges": false,
+    "grass": false,
+    "city": true,
+    "cityK": 1,
+    "cityFill": 0.9,
+    "ruinK": 0.18
+   },
+   "desc": "Крупные кварталы, площадь в центре с главной точкой, три проспекта-ленты, ворота и пролом в стене. Дома и стены закрывают обзор."
+  },
+  {
+   "id": "ruins",
+   "name": "Руины",
+   "size": 1000,
+   "seed": 45,
+   "terrain": {
+    "walls": false,
+    "swamps": false,
+    "rocks": false,
+    "rivers": false,
+    "bridges": false,
+    "grass": false,
+    "city": true,
+    "cityK": 1,
+    "cityFill": 0.8,
+    "ruinK": 0.6
+   },
+   "desc": "Разрушенный город: от домов остались обломки стен. Много укрытий от стрел, мало сплошных преград, обзор рваный."
+  },
+  {
+   "id": "bigcity",
+   "name": "Большой город",
+   "size": 1500,
+   "seed": 192,
+   "terrain": {
+    "walls": false,
+    "swamps": false,
+    "rocks": false,
+    "rivers": false,
+    "bridges": false,
+    "grass": false,
+    "city": true,
+    "cityK": 1,
+    "cityFill": 0.9,
+    "ruinK": 0.3
+   },
+   "desc": "Огромный город на 1500 м: три широких проспекта, большие кварталы и просторные площади. Фланговые отряды успевают сработать."
   }
  ]
 }
